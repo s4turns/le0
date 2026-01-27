@@ -39,7 +39,7 @@ pip install -r requirements.txt
 
 ## Configuration
 
-Edit the bot configuration at the bottom of `irc_bot.py`:
+Edit the bot configuration at the bottom of `le0.py`:
 
 ```python
 bot = IRCBot(
@@ -65,7 +65,7 @@ bot = IRCBot(
 ### Running the Bot
 
 ```bash
-python3 irc_bot.py
+python3 le0.py
 ```
 
 ### Available Commands
