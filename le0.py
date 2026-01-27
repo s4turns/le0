@@ -453,6 +453,34 @@ class IRCBot:
         else:
             return f"{IRCColors.color('✗', IRCColors.RED)} Haven't seen {nick} yet"
     
+    def get_urban_definition(self, term: str) -> str:
+        """Get Urban Dictionary definition."""
+        try:
+            response = requests.get(
+                f"https://api.urbandictionary.com/v0/define?term={term}",
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data['list']:
+                    definition = data['list'][0]
+                    word = definition['word']
+                    meaning = definition['definition'].replace('[', '').replace(']', '')
+                    # Truncate if too long
+                    if len(meaning) > 300:
+                        meaning = meaning[:297] + "..."
+                    
+                    word_text = IRCColors.bold(IRCColors.color(word, IRCColors.ORANGE))
+                    return f"{word_text} {IRCColors.GREY}→{IRCColors.RESET} {meaning}"
+                else:
+                    return f"{IRCColors.color('✗', IRCColors.RED)} No definition found for '{term}'"
+            else:
+                return f"{IRCColors.color('✗', IRCColors.RED)} Error fetching definition"
+                
+        except Exception as e:
+            return f"{IRCColors.color('✗', IRCColors.RED)} Error: {str(e)}"
+    
     def handle_command(self, channel: str, nick: str, message: str):
         """
         Handle bot commands.
@@ -497,6 +525,16 @@ class IRCBot:
                 self.send_message(channel, forecast)
                 time.sleep(0.5)  # Anti-flood delay
         
+        # Urban Dictionary: %urban <term>
+        elif command == f"{self.command_prefix}urban" or command == f"{self.command_prefix}ud":
+            if len(parts) < 2:
+                self.send_message(channel, f"{nick}: Usage: {self.command_prefix}urban <term>")
+                return
+            
+            term = " ".join(parts[1:])
+            definition = self.get_urban_definition(term)
+            self.send_message(channel, definition)
+        
         # Time command: %time [location]
         elif command == f"{self.command_prefix}time":
             location = " ".join(parts[1:]) if len(parts) > 1 else None
@@ -534,7 +572,7 @@ class IRCBot:
         elif command == f"{self.command_prefix}help":
             self.send_message(channel, f"{IRCColors.bold(IRCColors.color('Available commands:', IRCColors.CYAN))}")
             self.send_message(channel, f"{IRCColors.YELLOW}Weather:{IRCColors.RESET} {self.command_prefix}weather/w <location>, {self.command_prefix}forecast/f <location>")
-            self.send_message(channel, f"{IRCColors.YELLOW}Info:{IRCColors.RESET} {self.command_prefix}time [location]")
+            self.send_message(channel, f"{IRCColors.YELLOW}Info:{IRCColors.RESET} {self.command_prefix}urban/ud <term>, {self.command_prefix}time [location]")
             self.send_message(channel, f"{IRCColors.YELLOW}Fun:{IRCColors.RESET} {self.command_prefix}coin/flip, {self.command_prefix}roll/dice [XdY], {self.command_prefix}8ball/8 <question>")
             self.send_message(channel, f"{IRCColors.YELLOW}Utility:{IRCColors.RESET} {self.command_prefix}seen <nick>, {self.command_prefix}help")
     
@@ -634,7 +672,7 @@ if __name__ == "__main__":
     print("Starting IRC Bot: le0")
     print("Commands:")
     print(f"  Weather: {bot.command_prefix}weather/w <location>, {bot.command_prefix}forecast/f <location>")
-    print(f"  Info: {bot.command_prefix}time [location]")
+    print(f"  Info: {bot.command_prefix}urban/ud <term>, {bot.command_prefix}time [location]")
     print(f"  Fun: {bot.command_prefix}coin/flip, {bot.command_prefix}roll/dice [XdY], {bot.command_prefix}8ball/8 <question>")
     print(f"  Utility: {bot.command_prefix}seen <nick>, {bot.command_prefix}help")
     print("\nPress Ctrl+C to stop the bot\n")
