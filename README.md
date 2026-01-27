@@ -96,7 +96,7 @@ Examples:
 
 #### Fun Commands
 ```
-%coin or %flip                           - Flip a coin
+%coin or %flip                          - Flip a coin
 %roll [XdY] or %dice [XdY]              - Roll dice (default: 1d6)
 %8ball <question> or %8 <question>      - Ask the magic 8-ball
 ```
