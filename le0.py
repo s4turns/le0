@@ -94,7 +94,7 @@ class IRCBot:
         
         # Backup weather API - OpenMeteo (no API key needed)
         self.geocoding_api = "https://geocoding-api.open-meteo.com/v1/search?name={location}&count=1&language=en&format=json"
-        self.openmeteo_api = "https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m,pressure_msl,cloud_cover,visibility,uv_index&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max,precipitation_sum,precipitation_probability_max&temperature_unit=celsius&wind_speed_unit=kmh&forecast_days=3&timezone=auto"
+        self.openmeteo_api = "https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m,pressure_msl,cloud_cover,visibility&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_sum,precipitation_probability_max&temperature_unit=celsius&wind_speed_unit=kmh&forecast_days=3&timezone=auto"
         
         # Track last seen users
         self.seen_users = {}
@@ -202,7 +202,6 @@ class IRCBot:
             cloud_cover = int(current['cloud_cover'])
             visibility = current.get('visibility', 0)
             visibility_km = int(visibility / 1000) if visibility else 0
-            uv_index = current.get('uv_index', 0)
             weather_code = current['weather_code']
             
             # Get sunrise/sunset from daily data
@@ -221,16 +220,6 @@ class IRCBot:
             temp_color = IRCColors.temp_color(temp_c)
             feels_color = IRCColors.temp_color(feels_c)
             
-            # UV Index color
-            if uv_index < 3:
-                uv_color = IRCColors.GREEN
-            elif uv_index < 6:
-                uv_color = IRCColors.YELLOW
-            elif uv_index < 8:
-                uv_color = IRCColors.ORANGE
-            else:
-                uv_color = IRCColors.RED
-            
             # Format with colors
             location_display = f"{city_name}, {country}" if country else city_name
             location_text = IRCColors.bold(IRCColors.color(location_display, IRCColors.CYAN))
@@ -242,11 +231,10 @@ class IRCBot:
             pressure_text = IRCColors.color(f"{pressure}hPa", IRCColors.LIGHT_GREY)
             cloud_text = IRCColors.color(f"{cloud_cover}%", IRCColors.LIGHT_GREY)
             vis_text = IRCColors.color(f"{visibility_km}km", IRCColors.LIGHT_CYAN)
-            uv_text = IRCColors.color(f"{uv_index:.1f}", uv_color)
             sunrise_text = IRCColors.color(sunrise, IRCColors.YELLOW)
             sunset_text = IRCColors.color(sunset, IRCColors.ORANGE)
             
-            # Build multi-line output
+            # Build multi-line output (NO UV)
             line1 = (
                 f"{location_text} {IRCColors.GREY}→{IRCColors.RESET} {desc_text} {IRCColors.GREY}|{IRCColors.RESET} "
                 f"🌡️ {temp_text} {IRCColors.GREY}|{IRCColors.RESET} "
@@ -256,8 +244,7 @@ class IRCBot:
             line2 = (
                 f"💧 {humidity_text} {IRCColors.GREY}|{IRCColors.RESET} "
                 f"💨 {wind_text} {IRCColors.GREY}|{IRCColors.RESET} "
-                f"☁️ {cloud_text} {IRCColors.GREY}|{IRCColors.RESET} "
-                f"🔆 UV: {uv_text}"
+                f"☁️ {cloud_text}"
             )
             
             line3 = (
@@ -323,8 +310,7 @@ class IRCBot:
                 weather_code = daily['weather_code'][i]
                 desc = self.weather_codes.get(weather_code, "Unknown")
                 
-                # Additional data
-                uv_max = daily.get('uv_index_max', [0])[i]
+                # Additional data (NO UV)
                 precip_sum = daily.get('precipitation_sum', [0])[i]
                 precip_prob = daily.get('precipitation_probability_max', [0])[i]
                 
@@ -332,21 +318,10 @@ class IRCBot:
                 max_color = IRCColors.temp_color(max_temp_c)
                 min_color = IRCColors.temp_color(min_temp_c)
                 
-                # UV color
-                if uv_max < 3:
-                    uv_color = IRCColors.GREEN
-                elif uv_max < 6:
-                    uv_color = IRCColors.YELLOW
-                elif uv_max < 8:
-                    uv_color = IRCColors.ORANGE
-                else:
-                    uv_color = IRCColors.RED
-                
                 date_text = IRCColors.bold(IRCColors.color(date, IRCColors.CYAN))
                 desc_text = IRCColors.color(desc, IRCColors.LIGHT_GREY)
                 high_text = f"{IRCColors.color(f'{max_temp_c}°C', max_color)} ({IRCColors.color(f'{max_temp_f}°F', max_color)})"
                 low_text = f"{IRCColors.color(f'{min_temp_c}°C', min_color)} ({IRCColors.color(f'{min_temp_f}°F', min_color)})"
-                uv_text = IRCColors.color(f"{uv_max:.1f}", uv_color)
                 precip_text = IRCColors.color(f"{precip_sum:.1f}mm", IRCColors.LIGHT_BLUE)
                 precip_prob_text = IRCColors.color(f"{precip_prob}%", IRCColors.CYAN)
                 
@@ -354,7 +329,6 @@ class IRCBot:
                     f"{date_text} {IRCColors.GREY}→{IRCColors.RESET} {desc_text} {IRCColors.GREY}|{IRCColors.RESET} "
                     f"High: {high_text} {IRCColors.GREY}|{IRCColors.RESET} "
                     f"Low: {low_text} {IRCColors.GREY}|{IRCColors.RESET} "
-                    f"UV: {uv_text} {IRCColors.GREY}|{IRCColors.RESET} "
                     f"💧 {precip_text} ({precip_prob_text})"
                 )
                 forecasts.append(forecast_msg)
@@ -368,37 +342,6 @@ class IRCBot:
         except (KeyError, IndexError, ValueError) as e:
             return [f"{IRCColors.color('✗', IRCColors.RED)} Error parsing forecast data"]
     
-    def get_urban_definition(self, term: str) -> str:
-        """Get Urban Dictionary definition."""
-        try:
-            response = requests.get(
-                f"https://api.urbandictionary.com/v0/define?term={term}",
-                timeout=10
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                if data['list']:
-                    definition = data['list'][0]
-                    word = definition['word']
-                    meaning = definition['definition'].replace('[', '').replace(']', '')
-                    permalink = definition['permalink']
-                    
-                    # Truncate if too long
-                    if len(meaning) > 250:
-                        meaning = meaning[:247] + "..."
-                    
-                    word_text = IRCColors.bold(IRCColors.color(word, IRCColors.ORANGE))
-                    link_text = IRCColors.color(IRCColors.UNDERLINE + permalink + IRCColors.RESET, IRCColors.LIGHT_BLUE)
-                    
-                    return f"{word_text} {IRCColors.GREY}→{IRCColors.RESET} {meaning}\n{IRCColors.GREY}└─{IRCColors.RESET} {link_text}"
-                else:
-                    return f"{IRCColors.color('✗', IRCColors.RED)} No definition found for '{term}'"
-            else:
-                return f"{IRCColors.color('✗', IRCColors.RED)} Error fetching definition"
-                
-        except Exception as e:
-            return f"{IRCColors.color('✗', IRCColors.RED)} Error: {str(e)}"
     
     def get_time(self, location: str = None) -> str:
         """Get current time for a location."""
@@ -539,41 +482,20 @@ class IRCBot:
                 self.send_message(channel, line)
                 time.sleep(0.3)  # Small delay between lines
         
-        # Forecast command: %forecast <location> [days]
+        # Forecast command: %forecast <location>
         elif command == f"{self.command_prefix}forecast" or command == f"{self.command_prefix}f":
             if len(parts) < 2:
-                self.send_message(channel, f"{nick}: Usage: {self.command_prefix}forecast <location> [days]")
+                self.send_message(channel, f"{nick}: Usage: {self.command_prefix}forecast <location>")
                 return
             
-            # Check if last part is a number
-            days = 3
-            location_parts = parts[1:]
-            
-            if location_parts[-1].isdigit():
-                days = min(int(location_parts[-1]), 3)
-                location_parts = location_parts[:-1]
-            
-            location = " ".join(location_parts)
-            forecasts = self.get_forecast(location, days)
+            location = " ".join(parts[1:])
+            forecasts = self.get_forecast(location, 3)
             
             header = f"{IRCColors.bold(IRCColors.color('Forecast', IRCColors.CYAN))} for {IRCColors.color(location, IRCColors.YELLOW)}"
             self.send_message(channel, header)
             for forecast in forecasts:
                 self.send_message(channel, forecast)
                 time.sleep(0.5)  # Anti-flood delay
-        
-        # Urban Dictionary: %urban <term>
-        elif command == f"{self.command_prefix}urban" or command == f"{self.command_prefix}ud":
-            if len(parts) < 2:
-                self.send_message(channel, f"{nick}: Usage: {self.command_prefix}urban <term>")
-                return
-            
-            term = " ".join(parts[1:])
-            definition = self.get_urban_definition(term)
-            # Split by newlines for multi-line output
-            for line in definition.split('\n'):
-                self.send_message(channel, line)
-                time.sleep(0.3)  # Small delay between lines
         
         # Time command: %time [location]
         elif command == f"{self.command_prefix}time":
@@ -611,8 +533,8 @@ class IRCBot:
         # Help command
         elif command == f"{self.command_prefix}help":
             self.send_message(channel, f"{IRCColors.bold(IRCColors.color('Available commands:', IRCColors.CYAN))}")
-            self.send_message(channel, f"{IRCColors.YELLOW}Weather:{IRCColors.RESET} {self.command_prefix}weather/w <location>, {self.command_prefix}forecast/f <location> [days]")
-            self.send_message(channel, f"{IRCColors.YELLOW}Info:{IRCColors.RESET} {self.command_prefix}urban/ud <term>, {self.command_prefix}time [location]")
+            self.send_message(channel, f"{IRCColors.YELLOW}Weather:{IRCColors.RESET} {self.command_prefix}weather/w <location>, {self.command_prefix}forecast/f <location>")
+            self.send_message(channel, f"{IRCColors.YELLOW}Info:{IRCColors.RESET} {self.command_prefix}time [location]")
             self.send_message(channel, f"{IRCColors.YELLOW}Fun:{IRCColors.RESET} {self.command_prefix}coin/flip, {self.command_prefix}roll/dice [XdY], {self.command_prefix}8ball/8 <question>")
             self.send_message(channel, f"{IRCColors.YELLOW}Utility:{IRCColors.RESET} {self.command_prefix}seen <nick>, {self.command_prefix}help")
     
@@ -703,7 +625,7 @@ if __name__ == "__main__":
         server="irc.blcknd.network",    # IRC server
         port=6697,                      # Port (6697 for SSL, 6667 for non-SSL)
         nickname="le0",                 # Your bot's nickname
-        channels=["#blcknd"],           # Channels to join
+        channels=["#d0mer"],            # Channels to join
         use_ssl=True,                   # Use SSL/TLS
         password=None,                  # Server password (if needed)
         command_prefix="%"              # Command trigger (default: "%")
@@ -711,8 +633,8 @@ if __name__ == "__main__":
     
     print("Starting IRC Bot: le0")
     print("Commands:")
-    print(f"  Weather: {bot.command_prefix}weather/w <location>, {bot.command_prefix}forecast/f <location> [days]")
-    print(f"  Info: {bot.command_prefix}urban/ud <term>, {bot.command_prefix}time [location]")
+    print(f"  Weather: {bot.command_prefix}weather/w <location>, {bot.command_prefix}forecast/f <location>")
+    print(f"  Info: {bot.command_prefix}time [location]")
     print(f"  Fun: {bot.command_prefix}coin/flip, {bot.command_prefix}roll/dice [XdY], {bot.command_prefix}8ball/8 <question>")
     print(f"  Utility: {bot.command_prefix}seen <nick>, {bot.command_prefix}help")
     print("\nPress Ctrl+C to stop the bot\n")
