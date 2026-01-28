@@ -99,6 +99,9 @@ class IRCBot:
         # Track last seen users
         self.seen_users = {}
         
+        # Quote database
+        self.quotes = []
+        
         # 8ball responses
         self.eightball_responses = [
             "It is certain", "It is decidedly so", "Without a doubt", "Yes definitely",
@@ -481,6 +484,27 @@ class IRCBot:
         except Exception as e:
             return f"{IRCColors.color('✗', IRCColors.RED)} Error: {str(e)}"
     
+    def add_quote(self, quote: str, added_by: str) -> str:
+        """Add a quote to the database."""
+        self.quotes.append({
+            'quote': quote,
+            'added_by': added_by,
+            'timestamp': time.time()
+        })
+        quote_num = len(self.quotes)
+        return f"{IRCColors.color('✓', IRCColors.GREEN)} Quote #{quote_num} added"
+    
+    def get_random_quote(self) -> str:
+        """Get a random quote."""
+        import random
+        if not self.quotes:
+            return f"{IRCColors.color('✗', IRCColors.RED)} No quotes in database yet"
+        
+        quote_data = random.choice(self.quotes)
+        quote_num = self.quotes.index(quote_data) + 1
+        quote_text = IRCColors.color(quote_data['quote'], IRCColors.LIGHT_GREY)
+        return f"💬 Quote #{quote_num}: {quote_text}"
+    
     def handle_command(self, channel: str, nick: str, message: str):
         """
         Handle bot commands.
@@ -568,12 +592,28 @@ class IRCBot:
             result = self.get_seen(target_nick)
             self.send_message(channel, result)
         
+        # Add quote: %addquote <quote>
+        elif command == f"{self.command_prefix}addquote":
+            if len(parts) < 2:
+                self.send_message(channel, f"{nick}: Usage: {self.command_prefix}addquote <quote>")
+                return
+            
+            quote = " ".join(parts[1:])
+            result = self.add_quote(quote, nick)
+            self.send_message(channel, result)
+        
+        # Random quote: %quote
+        elif command == f"{self.command_prefix}quote":
+            result = self.get_random_quote()
+            self.send_message(channel, result)
+        
         # Help command
         elif command == f"{self.command_prefix}help":
             self.send_message(channel, f"{IRCColors.bold(IRCColors.color('Available commands:', IRCColors.CYAN))}")
             self.send_message(channel, f"{IRCColors.YELLOW}Weather:{IRCColors.RESET} {self.command_prefix}weather/w <location>, {self.command_prefix}forecast/f <location>")
             self.send_message(channel, f"{IRCColors.YELLOW}Info:{IRCColors.RESET} {self.command_prefix}urban/ud <term>, {self.command_prefix}time [location]")
             self.send_message(channel, f"{IRCColors.YELLOW}Fun:{IRCColors.RESET} {self.command_prefix}coin/flip, {self.command_prefix}roll/dice [XdY], {self.command_prefix}8ball/8 <question>")
+            self.send_message(channel, f"{IRCColors.YELLOW}Social:{IRCColors.RESET} {self.command_prefix}quote, {self.command_prefix}addquote <text>")
             self.send_message(channel, f"{IRCColors.YELLOW}Utility:{IRCColors.RESET} {self.command_prefix}seen <nick>, {self.command_prefix}help")
     
     def run(self):
@@ -674,6 +714,7 @@ if __name__ == "__main__":
     print(f"  Weather: {bot.command_prefix}weather/w <location>, {bot.command_prefix}forecast/f <location>")
     print(f"  Info: {bot.command_prefix}urban/ud <term>, {bot.command_prefix}time [location]")
     print(f"  Fun: {bot.command_prefix}coin/flip, {bot.command_prefix}roll/dice [XdY], {bot.command_prefix}8ball/8 <question>")
+    print(f"  Social: {bot.command_prefix}quote, {bot.command_prefix}addquote <text>")
     print(f"  Utility: {bot.command_prefix}seen <nick>, {bot.command_prefix}help")
     print("\nPress Ctrl+C to stop the bot\n")
     
