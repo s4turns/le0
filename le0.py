@@ -248,15 +248,36 @@ class IRCBot:
 
     # ─── Enhanced formatting helpers ───────────────────────────────
 
+    BOX_WIDTH = 70  # Fixed width for all boxes
+
+    def _strip_irc_colors(self, text: str) -> str:
+        """Strip IRC color codes to measure visible text length."""
+        # Remove color codes (\x03XX or \x03XX,XX)
+        text = re.sub(r'\x03\d{1,2}(,\d{1,2})?', '', text)
+        # Remove formatting codes
+        text = text.replace('\x02', '')  # Bold
+        text = text.replace('\x1D', '')  # Italic
+        text = text.replace('\x1F', '')  # Underline
+        text = text.replace('\x0F', '')  # Reset
+        return text
+
     def _header(self, text: str) -> str:
         """Enhanced header with box drawing."""
-        return f"{B}{COLOR_PRIMARY}{BOX_TL}{BOX_H*2} {text} {BOX_H*2}{BOX_TR}{R}"
+        visible_len = len(self._strip_irc_colors(text))
+        padding = self.BOX_WIDTH - visible_len - 6  # 6 for "╔══  ══╗"
+        left_pad = padding // 2
+        right_pad = padding - left_pad
+        return f"{B}{COLOR_PRIMARY}{BOX_TL}{BOX_H*(left_pad+2)} {text} {BOX_H*(right_pad+2)}{BOX_TR}{R}"
 
     def _footer(self, text: str = "") -> str:
         """Footer to close boxes."""
         if text:
-            return f"{B}{COLOR_PRIMARY}{BOX_BL}{BOX_H*2} {text} {BOX_H*2}{BOX_BR}{R}"
-        return f"{B}{COLOR_PRIMARY}{BOX_BL}{BOX_H*6}{BOX_BR}{R}"
+            visible_len = len(self._strip_irc_colors(text))
+            padding = self.BOX_WIDTH - visible_len - 6
+            left_pad = padding // 2
+            right_pad = padding - left_pad
+            return f"{B}{COLOR_PRIMARY}{BOX_BL}{BOX_H*(left_pad+2)} {text} {BOX_H*(right_pad+2)}{BOX_BR}{R}"
+        return f"{B}{COLOR_PRIMARY}{BOX_BL}{BOX_H*(self.BOX_WIDTH-2)}{BOX_BR}{R}"
 
     def _error(self, text: str) -> str:
         """Error message with icon."""
@@ -272,7 +293,21 @@ class IRCBot:
 
     def _arrow_line(self, text: str) -> str:
         """Arrow-prefixed line with box sides."""
-        return f"{B}{COLOR_PRIMARY}{BOX_V}{R} {B}{COLOR_ACCENT}{ARROW}{R} {text}"
+        visible_len = len(self._strip_irc_colors(text))
+        padding_needed = self.BOX_WIDTH - visible_len - 5  # 5 for "║ ▸  ║"
+        if padding_needed < 0:
+            padding_needed = 0
+        spaces = " " * padding_needed
+        return f"{B}{COLOR_PRIMARY}{BOX_V}{R} {B}{COLOR_ACCENT}{ARROW}{R} {text}{spaces} {B}{COLOR_PRIMARY}{BOX_V}{R}"
+
+    def _box_line(self, text: str) -> str:
+        """Plain line with box sides (no arrow)."""
+        visible_len = len(self._strip_irc_colors(text))
+        padding_needed = self.BOX_WIDTH - visible_len - 4  # 4 for "║  ║"
+        if padding_needed < 0:
+            padding_needed = 0
+        spaces = " " * padding_needed
+        return f"{B}{COLOR_PRIMARY}{BOX_V}{R} {text}{spaces} {B}{COLOR_PRIMARY}{BOX_V}{R}"
 
     def _label(self, text: str) -> str:
         """Colored label for field names."""
@@ -620,11 +655,12 @@ class IRCBot:
         """Flip a coin."""
         result = random.choice(["HEADS", "TAILS"])
         coin_color = C.YELLOW if result == "HEADS" else C.LIGHT_GREY
+        letter = 'H' if result == 'HEADS' else 'T'
         art = (
-            f"{B}{COLOR_PRIMARY}{BOX_V}{R} {coin_color}  _____  {R}\n"
-            f"{B}{COLOR_PRIMARY}{BOX_V}{R} {coin_color} /     \\ {R}\n"
-            f"{B}{COLOR_PRIMARY}{BOX_V}{R} {coin_color}|   {B}{'H' if result == 'HEADS' else 'T'}{R}{coin_color}   |{R}\n"
-            f"{B}{COLOR_PRIMARY}{BOX_V}{R} {coin_color} \\_____/ {R}"
+            f"{self._box_line(f'{coin_color}  _____  {R}')}\n"
+            f"{self._box_line(f'{coin_color} /     \\\\ {R}')}\n"
+            f"{self._box_line(f'{coin_color}|   {B}{letter}{R}{coin_color}   |{R}')}\n"
+            f"{self._box_line(f'{coin_color} \\\\_____/ {R}')}"
         )
         result_text = f"{B}{coin_color}{result}{R}"
         return f"{self._header('Coin Flip')}\n{art}\n{self._arrow_line(f'{STAR} {result_text}')}\n{self._footer()}"
@@ -675,9 +711,9 @@ class IRCBot:
             resp_color = COLOR_WARNING
 
         ball = (
-            f"{B}{COLOR_PRIMARY}{BOX_V}{R} {C.YELLOW}  ___  {R}\n"
-            f"{B}{COLOR_PRIMARY}{BOX_V}{R} {C.YELLOW} / {B}{C.CYAN}8{R} {C.YELLOW}\\ {R}\n"
-            f"{B}{COLOR_PRIMARY}{BOX_V}{R} {C.YELLOW} \\___/ {R}"
+            f"{self._box_line(f'{C.YELLOW}  ___  {R}')}\n"
+            f"{self._box_line(f'{C.YELLOW} / {B}{C.CYAN}8{R} {C.YELLOW}\\\\ {R}')}\n"
+            f"{self._box_line(f'{C.YELLOW} \\\\___/ {R}')}"
         )
         return f"{self._header('Magic 8-Ball')}\n{ball}\n{self._arrow_line(f'{B}{resp_color}{response}{R}')}\n{self._footer()}"
 
