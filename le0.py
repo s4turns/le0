@@ -56,35 +56,35 @@ class IRCColors:
 
 # ─── Enhanced Theme Constants ─────────────────────────────────────────
 
-# Unicode box-drawing pieces
-BOX_TL = "╔"
-BOX_TR = "╗"
-BOX_BL = "╚"
-BOX_BR = "╝"
-BOX_H  = "═"
-BOX_V  = "║"
-BOX_VR = "╠"
-BOX_VL = "╣"
+# Box-drawing pieces using square brackets
+BOX_TL = "["
+BOX_TR = "]"
+BOX_BL = "["
+BOX_BR = "]"
+BOX_H  = "="
+BOX_V  = "|"
+BOX_VR = "["
+BOX_VL = "]"
 BOX_SEP = "•"
-ARROW  = "▸"
-BULLET = "◆"
-DIVIDER = "─"
-STAR = "★"
-DOT = "●"
+ARROW  = ">"
+BULLET = "•"
+DIVIDER = "-"
+STAR = "*"
+DOT = "•"
 
 # Color shortcuts for cleaner code
 C = IRCColors
 B  = IRCColors.BOLD
 R  = IRCColors.RESET
 
-# Theme color palette
+# Theme color palette (no pink or purple)
 COLOR_PRIMARY = IRCColors.CYAN
 COLOR_ACCENT = IRCColors.LIGHT_CYAN
 COLOR_SUCCESS = IRCColors.LIGHT_GREEN
 COLOR_ERROR = IRCColors.RED
 COLOR_WARNING = IRCColors.ORANGE
 COLOR_INFO = IRCColors.YELLOW
-COLOR_LABEL = IRCColors.PURPLE
+COLOR_LABEL = IRCColors.CYAN
 COLOR_VALUE = IRCColors.LIGHT_GREY
 
 
@@ -602,7 +602,7 @@ class IRCBot:
                     if len(meaning) > 300:
                         meaning = meaning[:297] + "..."
 
-                    word_text = f"{B}{C.PINK}{word}{R}"
+                    word_text = f"{B}{C.CYAN}{word}{R}"
                     return f"{self._header('Urban Dictionary')}\n{self._arrow_line(f'{word_text} {COLOR_PRIMARY}{DIVIDER*3}{R} {COLOR_ACCENT}{meaning}{R}')}"
                 else:
                     return self._error(f"No definition found for '{term}'")
@@ -645,7 +645,7 @@ class IRCBot:
             rolls = [random.randint(1, sides) for _ in range(num)]
             total = sum(rolls)
 
-            dice_text = f"{B}{C.PURPLE}{num}d{sides}{R}"
+            dice_text = f"{B}{C.YELLOW}{num}d{sides}{R}"
             total_text = f"{B}{C.YELLOW}{total}{R}"
 
             if num == 1:
@@ -673,9 +673,9 @@ class IRCBot:
             resp_color = COLOR_WARNING
 
         ball = (
-            f"{C.PURPLE}  ___  {R}\n"
-            f"{C.PURPLE} / {B}{C.PINK}8{R} {C.PURPLE}\\ {R}\n"
-            f"{C.PURPLE} \\___/ {R}"
+            f"{C.YELLOW}  ___  {R}\n"
+            f"{C.YELLOW} / {B}{C.CYAN}8{R} {C.YELLOW}\\ {R}\n"
+            f"{C.YELLOW} \\___/ {R}"
         )
         return f"{self._header('Magic 8-Ball')}\n{ball}\n{self._arrow_line(f'{B}{resp_color}{response}{R}')}"
 
@@ -711,7 +711,7 @@ class IRCBot:
             result_icon = "✗"
 
         you_text = f"{B}{C.CYAN}{choice.upper()}{R} {icons[choice]}"
-        bot_text = f"{B}{C.PINK}{bot_choice.upper()}{R} {icons[bot_choice]}"
+        bot_text = f"{B}{C.CYAN}{bot_choice.upper()}{R} {icons[bot_choice]}"
         result_text = f"{B}{result_color}{result_icon} {result}{R}"
         return f"{self._header('Rock Paper Scissors')} {you_text} {COLOR_PRIMARY}vs{R} {bot_text} {B}{COLOR_PRIMARY}{ARROW}{R} {result_text}"
 
@@ -747,7 +747,7 @@ class IRCBot:
             else:
                 time_str = f"{elapsed // 86400}d ago"
 
-            nick_text = f"{B}{C.PINK}{user['nick']}{R}"
+            nick_text = f"{B}{C.CYAN}{user['nick']}{R}"
             time_text = f"{C.YELLOW}{time_str}{R}"
             channel_text = f"{COLOR_ACCENT}{user['channel']}{R}"
             msg_text = f"{COLOR_VALUE}{user['message']}{R}"
@@ -779,7 +779,7 @@ class IRCBot:
         quote_data = random.choice(self.quotes)
         quote_num = self.quotes.index(quote_data) + 1
         quote_text = f"{COLOR_ACCENT}{quote_data['quote']}{R}"
-        by_text = f"{B}{C.PINK}{quote_data['added_by']}{R}"
+        by_text = f"{B}{C.CYAN}{quote_data['added_by']}{R}"
         dq = '"'
         return (
             f"{self._header(f'Quote {B}{C.YELLOW}#{quote_num}{R}')}\n"
@@ -1089,9 +1089,9 @@ class IRCBot:
                 self._header(f"le0 Bot Commands {BOX_SEP} Help Menu"),
                 f" {B}{C.CYAN}[Weather]{R}  {COLOR_ACCENT}{p}weather/w <loc>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}forecast/f <loc>{R}",
                 f" {B}{C.YELLOW}[Info]{R}     {COLOR_ACCENT}{p}urban/ud <term>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}time [loc]{R}",
-                f" {B}{C.PINK}[Fun]{R}      {COLOR_ACCENT}{p}coin/flip{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}roll/dice [XdY]{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}8ball/8 <q>{R}",
+                f" {B}{C.CYAN}[Fun]{R}      {COLOR_ACCENT}{p}coin/flip{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}roll/dice [XdY]{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}8ball/8 <q>{R}",
                 f"             {COLOR_ACCENT}{p}rps <r/p/s>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}fact{R}",
-                f" {B}{C.PURPLE}[Social]{R}   {COLOR_ACCENT}{p}quote{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}addquote <text>{R}",
+                f" {B}{C.YELLOW}[Social]{R}   {COLOR_ACCENT}{p}quote{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}addquote <text>{R}",
                 f" {B}{C.LIGHT_GREEN}[Utility]{R}  {COLOR_ACCENT}{p}seen <nick>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}ping{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}uptime{R}",
                 f" {B}{C.ORANGE}[Tools]{R}    {COLOR_ACCENT}{p}calc <expr>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}hash <text>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}base64/b64 <e/d>{R}",
                 f" {B}{C.LIGHT_BLUE}[Text]{R}     {COLOR_ACCENT}{p}reverse <text>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}mock <text>{R}",
@@ -1189,27 +1189,27 @@ if __name__ == "__main__":
 
     # Enhanced startup banner
     print(r"""
-    ╔═══════════════════════════════════════╗
-    ║     _       ___                       ║
-    ║    | | ___ / _ \                      ║
-    ║    | |/ _ \ | | |                     ║
-    ║    | |  __/ |_| |                     ║
-    ║    |_|\___|\___/                      ║
-    ║                                       ║
-    ║   ◆ IRC Bot v2.0 - Enhanced Theme    ║
-    ╠═══════════════════════════════════════╣
+    [========================================]
+    |     _       ___                       |
+    |    | | ___ / _ \                      |
+    |    | |/ _ \ | | |                     |
+    |    | |  __/ |_| |                     |
+    |    |_|\___|\___/                      |
+    |                                       |
+    |   • IRC Bot v2.0 - Enhanced Theme    |
+    [========================================]
     """)
     p = bot.command_prefix
-    print(f"    ║  Weather  │ {p}weather/w  {p}forecast/f    ║")
-    print(f"    ║  Info     │ {p}urban/ud   {p}time          ║")
-    print(f"    ║  Fun      │ {p}coin  {p}roll  {p}8ball  {p}rps ║")
-    print(f"    ║  Social   │ {p}quote  {p}addquote          ║")
-    print(f"    ║  Utility  │ {p}seen  {p}ping  {p}uptime     ║")
-    print(f"    ║  Tools    │ {p}calc  {p}hash  {p}base64     ║")
-    print(f"    ║  Text     │ {p}reverse  {p}mock            ║")
-    print(r"""    ╚═══════════════════════════════════════╝
+    print(f"    |  Weather  | {p}weather/w  {p}forecast/f    |")
+    print(f"    |  Info     | {p}urban/ud   {p}time          |")
+    print(f"    |  Fun      | {p}coin  {p}roll  {p}8ball  {p}rps |")
+    print(f"    |  Social   | {p}quote  {p}addquote          |")
+    print(f"    |  Utility  | {p}seen  {p}ping  {p}uptime     |")
+    print(f"    |  Tools    | {p}calc  {p}hash  {p}base64     |")
+    print(f"    |  Text     | {p}reverse  {p}mock            |")
+    print(r"""    [========================================]
 
-    ▸ Ready! Press Ctrl+C to stop
+    > Ready! Press Ctrl+C to stop
     """)
 
     bot.run()
