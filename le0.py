@@ -728,10 +728,12 @@ class IRCBot:
         quote_num = self.quotes.index(quote_data) + 1
         quote_text = IRCColors.color(quote_data['quote'], IRCColors.LIGHT_GREY)
         by_text = IRCColors.color(quote_data['added_by'], IRCColors.CYAN)
+        quoted = '"' + quote_text + '"'
+        added_line = '-- added by ' + by_text
         return (
             f"{self._header(f'Quote #{quote_num}')}\n"
-            f"{self._arrow_line(f'\"{quote_text}\"')}\n"
-            f"{self._arrow_line(f'-- added by {by_text}')}"
+            f"{self._arrow_line(quoted)}\n"
+            f"{self._arrow_line(added_line)}"
         )
 
     def get_uptime(self) -> str:
