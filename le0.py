@@ -699,13 +699,34 @@ class IRCBot:
                     definition = data['list'][0]
                     word = definition['word']
                     meaning = definition['definition'].replace('[', '').replace(']', '')
-                    # Truncate to fit in box (box width - word - separators - arrow - padding)
-                    max_meaning_len = 150
-                    if len(meaning) > max_meaning_len:
-                        meaning = meaning[:max_meaning_len - 3] + "..."
 
+                    # Word wrap the definition
+                    max_line_width = self.BOX_WIDTH - 6  # Space for "║ > text ║"
+                    words = meaning.split()
+                    lines = []
+                    current_line = ""
+
+                    for w in words:
+                        if len(current_line) + len(w) + 1 <= max_line_width:
+                            current_line += (w + " ")
+                        else:
+                            if current_line:
+                                lines.append(current_line.rstrip())
+                            current_line = w + " "
+
+                    if current_line:
+                        lines.append(current_line.rstrip())
+
+                    # Build output with word and definition on separate lines
                     word_text = f"{B}{C.CYAN}{word}{R}"
-                    return f"{self._header('Urban Dictionary')}\n{self._arrow_line(f'{word_text} {COLOR_PRIMARY}{DIVIDER*3}{R} {COLOR_ACCENT}{meaning}{R}')}\n{self._footer()}"
+                    output = f"{self._header('Urban Dictionary')}\n"
+                    output += f"{self._arrow_line(word_text)}\n"
+
+                    for line in lines[:5]:  # Max 5 lines of definition
+                        output += f"{self._arrow_line(f'{COLOR_ACCENT}{line}{R}')}\n"
+
+                    output += self._footer()
+                    return output
                 else:
                     return self._error(f"No definition found for '{term}'")
             else:
