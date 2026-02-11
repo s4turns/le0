@@ -1181,7 +1181,7 @@ if __name__ == "__main__":
         server="irc.blcknd.network",
         port=6697,
         nickname="le0",
-        channels=["#d0mer"],
+        channels=["#d0m3r", "#blcknd"],
         use_ssl=True,
         password=None,
         command_prefix="%"
