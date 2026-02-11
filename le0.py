@@ -56,21 +56,21 @@ class IRCColors:
 
 # ─── Enhanced Theme Constants ─────────────────────────────────────────
 
-# Box-drawing pieces using square brackets
-BOX_TL = "["
-BOX_TR = "]"
-BOX_BL = "["
-BOX_BR = "]"
-BOX_H  = "="
-BOX_V  = "|"
-BOX_VR = "["
-BOX_VL = "]"
+# Unicode box-drawing pieces
+BOX_TL = "╔"
+BOX_TR = "╗"
+BOX_BL = "╚"
+BOX_BR = "╝"
+BOX_H  = "═"
+BOX_V  = "║"
+BOX_VR = "╠"
+BOX_VL = "╣"
 BOX_SEP = "•"
-ARROW  = ">"
+ARROW  = "▸"
 BULLET = "•"
-DIVIDER = "-"
-STAR = "*"
-DOT = "•"
+DIVIDER = "─"
+STAR = "★"
+DOT = "●"
 
 # Color shortcuts for cleaner code
 C = IRCColors
@@ -271,8 +271,8 @@ class IRCBot:
         return f"{B}{COLOR_INFO}{DOT}{R} {COLOR_ACCENT}{text}{R}"
 
     def _arrow_line(self, text: str) -> str:
-        """Arrow-prefixed line."""
-        return f" {B}{COLOR_ACCENT}{ARROW}{R} {text}"
+        """Arrow-prefixed line with box sides."""
+        return f"{B}{COLOR_PRIMARY}{BOX_V}{R} {B}{COLOR_ACCENT}{ARROW}{R} {text}"
 
     def _label(self, text: str) -> str:
         """Colored label for field names."""
@@ -477,8 +477,9 @@ class IRCBot:
                 f"{self._label('Sunrise')}: {B}{C.YELLOW}{sunrise}{R}  "
                 f"{self._label('Sunset')}: {B}{C.ORANGE}{sunset}{R}"
             )
+            footer = self._footer()
 
-            return f"{line1}\n{line2}\n{line3}\n{line4}"
+            return f"{line1}\n{line2}\n{line3}\n{line4}\n{footer}"
 
         except requests.exceptions.Timeout:
             return self._error("Request timed out - weather service may be unavailable")
@@ -551,6 +552,7 @@ class IRCBot:
                 )
                 forecasts.append(forecast_msg)
 
+            forecasts.append(self._footer())
             return forecasts
 
         except requests.exceptions.Timeout:
@@ -603,7 +605,7 @@ class IRCBot:
                         meaning = meaning[:297] + "..."
 
                     word_text = f"{B}{C.CYAN}{word}{R}"
-                    return f"{self._header('Urban Dictionary')}\n{self._arrow_line(f'{word_text} {COLOR_PRIMARY}{DIVIDER*3}{R} {COLOR_ACCENT}{meaning}{R}')}"
+                    return f"{self._header('Urban Dictionary')}\n{self._arrow_line(f'{word_text} {COLOR_PRIMARY}{DIVIDER*3}{R} {COLOR_ACCENT}{meaning}{R}')}\n{self._footer()}"
                 else:
                     return self._error(f"No definition found for '{term}'")
             else:
@@ -619,13 +621,13 @@ class IRCBot:
         result = random.choice(["HEADS", "TAILS"])
         coin_color = C.YELLOW if result == "HEADS" else C.LIGHT_GREY
         art = (
-            f"{coin_color}  _____  {R}\n"
-            f"{coin_color} /     \\ {R}\n"
-            f"{coin_color}|   {B}{'H' if result == 'HEADS' else 'T'}{R}{coin_color}   |{R}\n"
-            f"{coin_color} \\_____/ {R}"
+            f"{B}{COLOR_PRIMARY}{BOX_V}{R} {coin_color}  _____  {R}\n"
+            f"{B}{COLOR_PRIMARY}{BOX_V}{R} {coin_color} /     \\ {R}\n"
+            f"{B}{COLOR_PRIMARY}{BOX_V}{R} {coin_color}|   {B}{'H' if result == 'HEADS' else 'T'}{R}{coin_color}   |{R}\n"
+            f"{B}{COLOR_PRIMARY}{BOX_V}{R} {coin_color} \\_____/ {R}"
         )
         result_text = f"{B}{coin_color}{result}{R}"
-        return f"{self._header('Coin Flip')}\n{art}\n{self._arrow_line(f'{STAR} {result_text}')}"
+        return f"{self._header('Coin Flip')}\n{art}\n{self._arrow_line(f'{STAR} {result_text}')}\n{self._footer()}"
 
     def roll_dice(self, dice_str: str = "1d6") -> str:
         """Roll dice (e.g., 2d6, 1d20)."""
@@ -673,11 +675,11 @@ class IRCBot:
             resp_color = COLOR_WARNING
 
         ball = (
-            f"{C.YELLOW}  ___  {R}\n"
-            f"{C.YELLOW} / {B}{C.CYAN}8{R} {C.YELLOW}\\ {R}\n"
-            f"{C.YELLOW} \\___/ {R}"
+            f"{B}{COLOR_PRIMARY}{BOX_V}{R} {C.YELLOW}  ___  {R}\n"
+            f"{B}{COLOR_PRIMARY}{BOX_V}{R} {C.YELLOW} / {B}{C.CYAN}8{R} {C.YELLOW}\\ {R}\n"
+            f"{B}{COLOR_PRIMARY}{BOX_V}{R} {C.YELLOW} \\___/ {R}"
         )
-        return f"{self._header('Magic 8-Ball')}\n{ball}\n{self._arrow_line(f'{B}{resp_color}{response}{R}')}"
+        return f"{self._header('Magic 8-Ball')}\n{ball}\n{self._arrow_line(f'{B}{resp_color}{response}{R}')}\n{self._footer()}"
 
     def rps(self, choice: str) -> str:
         """Rock Paper Scissors."""
@@ -718,7 +720,7 @@ class IRCBot:
     def get_fact(self) -> str:
         """Get a random fun fact."""
         fact = random.choice(self.facts)
-        return f"{self._header('Random Fact')}\n{self._arrow_line(f'{STAR} {COLOR_ACCENT}{fact}{R}')}"
+        return f"{self._header('Random Fact')}\n{self._arrow_line(f'{STAR} {COLOR_ACCENT}{fact}{R}')}\n{self._footer()}"
 
     # ─── Utility Commands ─────────────────────────────────────────
 
@@ -756,7 +758,8 @@ class IRCBot:
             return (
                 f"{self._header('User Seen')}\n"
                 f"{self._arrow_line(f'{nick_text} {COLOR_PRIMARY}{DIVIDER*2}{R} {time_text} in {channel_text}')}\n"
-                f"{self._arrow_line(f'{msg_label}: {msg_text}')}"
+                f"{self._arrow_line(f'{msg_label}: {msg_text}')}\n"
+                f"{self._footer()}"
             )
         else:
             return self._error(f"Haven't seen {nick} yet")
@@ -784,7 +787,8 @@ class IRCBot:
         return (
             f"{self._header(f'Quote {B}{C.YELLOW}#{quote_num}{R}')}\n"
             f"{self._arrow_line(f'{C.YELLOW}{dq}{R}' + quote_text + f'{C.YELLOW}{dq}{R}')}\n"
-            f"{self._arrow_line(f'{COLOR_PRIMARY}{DIVIDER*2}{R} added by {by_text}')}"
+            f"{self._arrow_line(f'{COLOR_PRIMARY}{DIVIDER*2}{R} added by {by_text}')}\n"
+            f"{self._footer()}"
         )
 
     def get_uptime(self) -> str:
@@ -827,7 +831,8 @@ class IRCBot:
             f"{self._header('Cryptographic Hash')}\n"
             f"{self._arrow_line(f'{md5_label}:    {C.LIGHT_BLUE}{md5}{R}')}\n"
             f"{self._arrow_line(f'{sha1_label}:   {C.CYAN}{sha1}{R}')}\n"
-            f"{self._arrow_line(f'{sha256_label}: {C.LIGHT_CYAN}{sha256_short}{R}')}"
+            f"{self._arrow_line(f'{sha256_label}: {C.LIGHT_CYAN}{sha256_short}{R}')}\n"
+            f"{self._footer()}"
         )
 
     def do_base64(self, mode: str, text: str) -> str:
@@ -835,11 +840,11 @@ class IRCBot:
         try:
             if mode in ('e', 'encode', 'enc'):
                 result = base64.b64encode(text.encode()).decode()
-                return f"{self._header('Base64 Encode')}\n{self._arrow_line(f'{COLOR_ACCENT}{result}{R}')}"
+                return f"{self._header('Base64 Encode')}\n{self._arrow_line(f'{COLOR_ACCENT}{result}{R}')}\n{self._footer()}"
             elif mode in ('d', 'decode', 'dec'):
                 result = base64.b64decode(text.encode()).decode('utf-8', errors='replace')
                 result = Sanitizer.strip_irc_controls(result)[:300]
-                return f"{self._header('Base64 Decode')}\n{self._arrow_line(f'{COLOR_ACCENT}{result}{R}')}"
+                return f"{self._header('Base64 Decode')}\n{self._arrow_line(f'{COLOR_ACCENT}{result}{R}')}\n{self._footer()}"
             else:
                 return self._error("Usage: %base64 <encode|decode> <text>")
         except Exception:
@@ -848,7 +853,7 @@ class IRCBot:
     def reverse_text(self, text: str) -> str:
         """Reverse a string."""
         reversed_text = text[::-1]
-        return f"{self._header('Reverse Text')}\n{self._arrow_line(f'{COLOR_ACCENT}{reversed_text}{R}')}"
+        return f"{self._header('Reverse Text')}\n{self._arrow_line(f'{COLOR_ACCENT}{reversed_text}{R}')}\n{self._footer()}"
 
     def mock_text(self, text: str) -> str:
         """SpOnGeBoB mOcKiNg CaSe."""
@@ -856,7 +861,7 @@ class IRCBot:
             c.upper() if i % 2 == 0 else c.lower()
             for i, c in enumerate(text)
         )
-        return f"{self._header('Mock Text')}\n{self._arrow_line(f'{C.YELLOW}{result}{R}')}"
+        return f"{self._header('Mock Text')}\n{self._arrow_line(f'{C.YELLOW}{result}{R}')}\n{self._footer()}"
 
     def safe_calc(self, expr: str) -> str:
         """Safely evaluate a math expression."""
@@ -1189,27 +1194,27 @@ if __name__ == "__main__":
 
     # Enhanced startup banner
     print(r"""
-    [========================================]
-    |     _       ___                       |
-    |    | | ___ / _ \                      |
-    |    | |/ _ \ | | |                     |
-    |    | |  __/ |_| |                     |
-    |    |_|\___|\___/                      |
-    |                                       |
-    |   • IRC Bot v2.0 - Enhanced Theme    |
-    [========================================]
+    ╔═══════════════════════════════════════╗
+    ║     _       ___                       ║
+    ║    | | ___ / _ \                      ║
+    ║    | |/ _ \ | | |                     ║
+    ║    | |  __/ |_| |                     ║
+    ║    |_|\___|\___/                      ║
+    ║                                       ║
+    ║   • IRC Bot v2.0 - Enhanced Theme    ║
+    ╠═══════════════════════════════════════╣
     """)
     p = bot.command_prefix
-    print(f"    |  Weather  | {p}weather/w  {p}forecast/f    |")
-    print(f"    |  Info     | {p}urban/ud   {p}time          |")
-    print(f"    |  Fun      | {p}coin  {p}roll  {p}8ball  {p}rps |")
-    print(f"    |  Social   | {p}quote  {p}addquote          |")
-    print(f"    |  Utility  | {p}seen  {p}ping  {p}uptime     |")
-    print(f"    |  Tools    | {p}calc  {p}hash  {p}base64     |")
-    print(f"    |  Text     | {p}reverse  {p}mock            |")
-    print(r"""    [========================================]
+    print(f"    ║  Weather  │ {p}weather/w  {p}forecast/f    ║")
+    print(f"    ║  Info     │ {p}urban/ud   {p}time          ║")
+    print(f"    ║  Fun      │ {p}coin  {p}roll  {p}8ball  {p}rps ║")
+    print(f"    ║  Social   │ {p}quote  {p}addquote          ║")
+    print(f"    ║  Utility  │ {p}seen  {p}ping  {p}uptime     ║")
+    print(f"    ║  Tools    │ {p}calc  {p}hash  {p}base64     ║")
+    print(f"    ║  Text     │ {p}reverse  {p}mock            ║")
+    print(r"""    ╚═══════════════════════════════════════╝
 
-    > Ready! Press Ctrl+C to stop
+    ▸ Ready! Press Ctrl+C to stop
     """)
 
     bot.run()
