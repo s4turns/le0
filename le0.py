@@ -826,28 +826,28 @@ class IRCBot:
 
         bot_choice = random.choice(choices)
 
-        # Emoji-style icons for choices
-        icons = {'rock': '✊', 'paper': '✋', 'scissors': '✌'}
-
         if choice == bot_choice:
             result_color = COLOR_WARNING
             result = "DRAW"
-            result_icon = DOT
         elif (choice == 'rock' and bot_choice == 'scissors') or \
              (choice == 'paper' and bot_choice == 'rock') or \
              (choice == 'scissors' and bot_choice == 'paper'):
             result_color = COLOR_SUCCESS
             result = "YOU WIN"
-            result_icon = STAR
         else:
             result_color = COLOR_ERROR
             result = "YOU LOSE"
-            result_icon = "✗"
 
-        you_text = f"{B}{C.CYAN}{choice.upper()}{R} {icons[choice]}"
-        bot_text = f"{B}{C.CYAN}{bot_choice.upper()}{R} {icons[bot_choice]}"
-        result_text = f"{B}{result_color}{result_icon} {result}{R}"
-        return f"{self._header('Rock Paper Scissors')}\n{self._arrow_line(f'{you_text} {COLOR_PRIMARY}vs{R} {bot_text} {B}{COLOR_PRIMARY}>{R} {result_text}')}\n{self._footer()}"
+        you_text = f"{B}{C.CYAN}{choice.upper()}{R}"
+        bot_text = f"{B}{C.CYAN}{bot_choice.upper()}{R}"
+        result_text = f"{B}{result_color}{result}{R}"
+
+        return (
+            f"{self._header('Rock Paper Scissors')}\n"
+            f"{self._arrow_line(f'You: {you_text} vs Bot: {bot_text}')}\n"
+            f"{self._arrow_line(f'Result: {result_text}')}\n"
+            f"{self._footer()}"
+        )
 
     def get_fact(self) -> str:
         """Get a random fun fact."""
