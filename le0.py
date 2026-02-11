@@ -558,7 +558,7 @@ class IRCBot:
             wind_color = self._wind_color(wind_speed)
             cloud_color = self._cloud_color(cloud_cover)
 
-            line1 = self._header(f"Weather {BOX_SEP} {B}{COLOR_ACCENT}{location_display}{R}")
+            line1 = self._header(f"Weather {BOX_SEP} {B}{COLOR_ACCENT}{location_display}{R}{COLOR_PRIMARY}")
             line2 = self._arrow_line(
                 f"{self._label('Condition')}: {desc_text}  "
                 f"{self._label('Temp')}: {temp_text}  "
@@ -616,7 +616,7 @@ class IRCBot:
             daily = data['daily']
 
             location_display = f"{city_name}, {country}" if country else city_name
-            forecasts = [self._header(f"Forecast {BOX_SEP} {B}{COLOR_ACCENT}{location_display}{R}")]
+            forecasts = [self._header(f"Forecast {BOX_SEP} {B}{COLOR_ACCENT}{location_display}{R}{COLOR_PRIMARY}")]
 
             for i in range(min(days, 3)):
                 date = daily['time'][i]
