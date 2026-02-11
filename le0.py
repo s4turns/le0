@@ -1088,7 +1088,9 @@ class IRCBot:
             if len(parts) > 1:
                 location = Sanitizer.sanitize_location(" ".join(parts[1:]))
             result = self.get_time(location)
-            self.send_message(channel, result)
+            for line in result.split('\n'):
+                self.send_message(channel, line)
+                time.sleep(0.2)
 
         # ── Fun ──
         elif command in (f"{p}coin", f"{p}flip"):
@@ -1103,7 +1105,9 @@ class IRCBot:
                 self.send_message(channel, self._error("Invalid dice format (use: 2d6, 1d20)"))
                 return
             result = self.roll_dice(dice_str)
-            self.send_message(channel, result)
+            for line in result.split('\n'):
+                self.send_message(channel, line)
+                time.sleep(0.2)
 
         elif command in (f"{p}8ball", f"{p}8"):
             question = " ".join(parts[1:])
@@ -1117,7 +1121,9 @@ class IRCBot:
                 self.send_message(channel, self._error(f"Usage: {p}rps <rock|paper|scissors>"))
                 return
             result = self.rps(parts[1])
-            self.send_message(channel, result)
+            for line in result.split('\n'):
+                self.send_message(channel, line)
+                time.sleep(0.2)
 
         elif command == f"{p}fact":
             result = self.get_fact()
@@ -1157,10 +1163,16 @@ class IRCBot:
                 time.sleep(0.2)
 
         elif command == f"{p}uptime":
-            self.send_message(channel, self.get_uptime())
+            result = self.get_uptime()
+            for line in result.split('\n'):
+                self.send_message(channel, line)
+                time.sleep(0.2)
 
         elif command == f"{p}ping":
-            self.send_message(channel, self.do_ping())
+            result = self.do_ping()
+            for line in result.split('\n'):
+                self.send_message(channel, line)
+                time.sleep(0.2)
 
         elif command == f"{p}calc":
             if len(parts) < 2:
@@ -1168,7 +1180,9 @@ class IRCBot:
                 return
             expr = " ".join(parts[1:])
             result = self.safe_calc(expr)
-            self.send_message(channel, result)
+            for line in result.split('\n'):
+                self.send_message(channel, line)
+                time.sleep(0.2)
 
         elif command == f"{p}hash":
             if len(parts) < 2:
@@ -1218,7 +1232,10 @@ class IRCBot:
             if not text:
                 self.send_message(channel, self._error("Invalid input"))
                 return
-            self.send_message(channel, self.mock_text(text))
+            result = self.mock_text(text)
+            for line in result.split('\n'):
+                self.send_message(channel, line)
+                time.sleep(0.2)
 
         # ── Help ──
         elif command == f"{p}help":
