@@ -674,12 +674,12 @@ class IRCBot:
                     geo_data = geo_response.json()
                     if geo_data.get('results'):
                         current_time = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
-                        return f"{self._header('Time')} {B}{C.YELLOW}{current_time}{R}"
+                        return f"{self._header('Time')}\n{self._arrow_line(f'{B}{C.YELLOW}{current_time}{R}')}\n{self._footer()}"
 
                 return self._error(f"Could not find location '{location}'")
             else:
                 current_time = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
-                return f"{self._header('Time')} {B}{C.YELLOW}{current_time}{R}"
+                return f"{self._header('Time')}\n{self._arrow_line(f'{B}{C.YELLOW}{current_time}{R}')}\n{self._footer()}"
 
         except Exception:
             return self._error("Error getting time")
@@ -779,10 +779,10 @@ class IRCBot:
             total_text = f"{B}{C.YELLOW}{total}{R}"
 
             if num == 1:
-                return f"{self._header('Dice Roll')} {dice_text} {B}{COLOR_PRIMARY}{ARROW}{R} {total_text}"
+                return f"{self._header('Dice Roll')}\n{self._arrow_line(f'{dice_text} {B}{COLOR_PRIMARY}>{R} {total_text}')}\n{self._footer()}"
             else:
                 rolls_text = f"{COLOR_ACCENT}{rolls}{R}"
-                return f"{self._header('Dice Roll')} {dice_text} {B}{COLOR_PRIMARY}{ARROW}{R} {rolls_text} {COLOR_PRIMARY}={R} {total_text}"
+                return f"{self._header('Dice Roll')}\n{self._arrow_line(f'{dice_text} {B}{COLOR_PRIMARY}>{R} {rolls_text} {COLOR_PRIMARY}={R} {total_text}')}\n{self._footer()}"
 
         except (ValueError, OverflowError):
             return self._error("Invalid dice format (use: 2d6, 1d20)")
@@ -847,7 +847,7 @@ class IRCBot:
         you_text = f"{B}{C.CYAN}{choice.upper()}{R} {icons[choice]}"
         bot_text = f"{B}{C.CYAN}{bot_choice.upper()}{R} {icons[bot_choice]}"
         result_text = f"{B}{result_color}{result_icon} {result}{R}"
-        return f"{self._header('Rock Paper Scissors')} {you_text} {COLOR_PRIMARY}vs{R} {bot_text} {B}{COLOR_PRIMARY}{ARROW}{R} {result_text}"
+        return f"{self._header('Rock Paper Scissors')}\n{self._arrow_line(f'{you_text} {COLOR_PRIMARY}vs{R} {bot_text} {B}{COLOR_PRIMARY}>{R} {result_text}')}\n{self._footer()}"
 
     def get_fact(self) -> str:
         """Get a random fun fact."""
@@ -941,12 +941,12 @@ class IRCBot:
         parts.append(f"{seconds}s")
 
         uptime_str = " ".join(parts)
-        return f"{self._header('Bot Uptime')} {B}{COLOR_SUCCESS}{uptime_str}{R}"
+        return f"{self._header('Bot Uptime')}\n{self._arrow_line(f'{B}{COLOR_SUCCESS}{uptime_str}{R}')}\n{self._footer()}"
 
     def do_ping(self) -> str:
         """Return a pong with timestamp."""
         ts = time.strftime("%H:%M:%S", time.gmtime())
-        return f"{self._header('Pong')} {B}{COLOR_SUCCESS}PONG!{R} {COLOR_ACCENT}{DOT}{R} {C.YELLOW}{ts}{R}"
+        return f"{self._header('Pong')}\n{self._arrow_line(f'{B}{COLOR_SUCCESS}PONG!{R} {COLOR_ACCENT}{DOT}{R} {C.YELLOW}{ts}{R}')}\n{self._footer()}"
 
     def hash_text(self, text: str) -> str:
         """Hash text with multiple algorithms."""
@@ -1022,7 +1022,7 @@ class IRCBot:
 
             expr_text = f"{COLOR_ACCENT}{expr}{R}"
             result_text = f"{B}{C.YELLOW}{result}{R}"
-            return f"{self._header('Calculator')} {expr_text} {COLOR_PRIMARY}={R} {result_text}"
+            return f"{self._header('Calculator')}\n{self._arrow_line(f'{expr_text} {COLOR_PRIMARY}={R} {result_text}')}\n{self._footer()}"
         except ZeroDivisionError:
             return self._error("Division by zero")
         except Exception:
