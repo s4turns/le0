@@ -346,7 +346,7 @@ class IRCBot:
 
     def _arrow_line(self, text: str) -> str:
         """Arrow-prefixed line with box sides."""
-        max_content_width = self.BOX_WIDTH - 5  # 5 for "║ ▸  ║"
+        max_content_width = self.BOX_WIDTH - 6  # 6 for "║ > text ║"
         visible_len = len(self._strip_irc_colors(text))
 
         if visible_len > max_content_width:
