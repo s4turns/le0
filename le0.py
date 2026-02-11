@@ -752,10 +752,11 @@ class IRCBot:
             channel_text = f"{COLOR_ACCENT}{user['channel']}{R}"
             msg_text = f"{COLOR_VALUE}{user['message']}{R}"
 
+            msg_label = self._label('Message')
             return (
                 f"{self._header('User Seen')}\n"
                 f"{self._arrow_line(f'{nick_text} {COLOR_PRIMARY}{DIVIDER*2}{R} {time_text} in {channel_text}')}\n"
-                f"{self._arrow_line(f'{self._label('Message')}: {msg_text}')}"
+                f"{self._arrow_line(f'{msg_label}: {msg_text}')}"
             )
         else:
             return self._error(f"Haven't seen {nick} yet")
@@ -818,11 +819,15 @@ class IRCBot:
         sha256 = hashlib.sha256(text.encode()).hexdigest()
         sha256_short = sha256[:32] + "..."
 
+        md5_label = self._label('MD5')
+        sha1_label = self._label('SHA1')
+        sha256_label = self._label('SHA256')
+
         return (
             f"{self._header('Cryptographic Hash')}\n"
-            f"{self._arrow_line(f'{self._label('MD5')}:    {C.LIGHT_BLUE}{md5}{R}')}\n"
-            f"{self._arrow_line(f'{self._label('SHA1')}:   {C.CYAN}{sha1}{R}')}\n"
-            f"{self._arrow_line(f'{self._label('SHA256')}: {C.LIGHT_CYAN}{sha256_short}{R}')}"
+            f"{self._arrow_line(f'{md5_label}:    {C.LIGHT_BLUE}{md5}{R}')}\n"
+            f"{self._arrow_line(f'{sha1_label}:   {C.CYAN}{sha1}{R}')}\n"
+            f"{self._arrow_line(f'{sha256_label}: {C.LIGHT_CYAN}{sha256_short}{R}')}"
         )
 
     def do_base64(self, mode: str, text: str) -> str:
