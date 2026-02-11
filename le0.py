@@ -54,25 +54,38 @@ class IRCColors:
         return f"{IRCColors.BOLD}{text}{IRCColors.RESET}"
 
 
-# ─── Matrix Theme Constants ──────────────────────────────────────────
+# ─── Enhanced Theme Constants ─────────────────────────────────────────
 
-# Box-drawing pieces
-BOX_TL = "+"
-BOX_TR = "+"
-BOX_BL = "+"
-BOX_BR = "+"
-BOX_H  = "-"
-BOX_V  = "|"
-BOX_SEP = "::"
-ARROW  = ">>"
-BULLET = "*"
-DIVIDER = "---"
+# Unicode box-drawing pieces
+BOX_TL = "╔"
+BOX_TR = "╗"
+BOX_BL = "╚"
+BOX_BR = "╝"
+BOX_H  = "═"
+BOX_V  = "║"
+BOX_VR = "╠"
+BOX_VL = "╣"
+BOX_SEP = "•"
+ARROW  = "▸"
+BULLET = "◆"
+DIVIDER = "─"
+STAR = "★"
+DOT = "●"
 
-# Matrix color shortcuts
-G  = IRCColors.GREEN
-LG = IRCColors.LIGHT_GREEN
+# Color shortcuts for cleaner code
+C = IRCColors
 B  = IRCColors.BOLD
 R  = IRCColors.RESET
+
+# Theme color palette
+COLOR_PRIMARY = IRCColors.CYAN
+COLOR_ACCENT = IRCColors.LIGHT_CYAN
+COLOR_SUCCESS = IRCColors.LIGHT_GREEN
+COLOR_ERROR = IRCColors.RED
+COLOR_WARNING = IRCColors.ORANGE
+COLOR_INFO = IRCColors.YELLOW
+COLOR_LABEL = IRCColors.PURPLE
+COLOR_VALUE = IRCColors.LIGHT_GREY
 
 
 class Sanitizer:
@@ -233,27 +246,106 @@ class IRCBot:
         self.user_last_cmd = {}
         self.rate_limit_seconds = 2
 
-    # ─── Matrix formatting helpers ─────────────────────────────────
+    # ─── Enhanced formatting helpers ───────────────────────────────
 
     def _header(self, text: str) -> str:
-        """Matrix-styled header: [-- text --]"""
-        return f"{B}{LG}[-- {text} --]{R}"
+        """Enhanced header with box drawing."""
+        return f"{B}{COLOR_PRIMARY}{BOX_TL}{BOX_H*2} {text} {BOX_H*2}{BOX_TR}{R}"
+
+    def _footer(self, text: str = "") -> str:
+        """Footer to close boxes."""
+        if text:
+            return f"{B}{COLOR_PRIMARY}{BOX_BL}{BOX_H*2} {text} {BOX_H*2}{BOX_BR}{R}"
+        return f"{B}{COLOR_PRIMARY}{BOX_BL}{BOX_H*6}{BOX_BR}{R}"
 
     def _error(self, text: str) -> str:
-        """Error message: [!] text"""
-        return f"{G}[{B}{IRCColors.RED}!{R}{G}]{R} {IRCColors.RED}{text}{R}"
+        """Error message with icon."""
+        return f"{B}{COLOR_ERROR}{BULLET}{R} {COLOR_ERROR}{text}{R}"
 
     def _success(self, text: str) -> str:
-        """Success message: [+] text"""
-        return f"{G}[{B}{LG}+{R}{G}]{R} {LG}{text}{R}"
+        """Success message with icon."""
+        return f"{B}{COLOR_SUCCESS}{STAR}{R} {COLOR_SUCCESS}{text}{R}"
 
     def _info(self, text: str) -> str:
-        """Info message: [*] text"""
-        return f"{G}[{B}{LG}*{R}{G}]{R} {LG}{text}{R}"
+        """Info message with icon."""
+        return f"{B}{COLOR_INFO}{DOT}{R} {COLOR_ACCENT}{text}{R}"
 
     def _arrow_line(self, text: str) -> str:
-        """Arrow-prefixed line: >> text"""
-        return f" {G}{ARROW}{R} {text}"
+        """Arrow-prefixed line."""
+        return f" {B}{COLOR_ACCENT}{ARROW}{R} {text}"
+
+    def _label(self, text: str) -> str:
+        """Colored label for field names."""
+        return f"{B}{COLOR_LABEL}{text}{R}"
+
+    def _value(self, text: str, color: str = None) -> str:
+        """Colored value."""
+        if color:
+            return f"{color}{text}{R}"
+        return f"{COLOR_VALUE}{text}{R}"
+
+    def _temp_color(self, temp_c: int) -> str:
+        """Get color code based on temperature (Celsius)."""
+        if temp_c < 0:
+            return IRCColors.LIGHT_BLUE  # Very cold
+        elif temp_c < 10:
+            return IRCColors.CYAN        # Cold
+        elif temp_c < 15:
+            return IRCColors.LIGHT_CYAN  # Cool
+        elif temp_c < 20:
+            return IRCColors.LIGHT_GREEN # Mild
+        elif temp_c < 25:
+            return IRCColors.GREEN       # Comfortable
+        elif temp_c < 30:
+            return IRCColors.YELLOW      # Warm
+        elif temp_c < 35:
+            return IRCColors.ORANGE      # Hot
+        else:
+            return IRCColors.RED         # Very hot
+
+    def _humidity_color(self, humidity: int) -> str:
+        """Get color code based on humidity percentage."""
+        if humidity < 30:
+            return IRCColors.ORANGE      # Too dry
+        elif humidity < 60:
+            return IRCColors.LIGHT_GREEN # Comfortable
+        elif humidity < 80:
+            return IRCColors.YELLOW      # Humid
+        else:
+            return IRCColors.CYAN        # Very humid
+
+    def _wind_color(self, wind_speed: int) -> str:
+        """Get color code based on wind speed (km/h)."""
+        if wind_speed < 10:
+            return IRCColors.LIGHT_GREEN # Calm
+        elif wind_speed < 30:
+            return IRCColors.YELLOW      # Moderate
+        elif wind_speed < 50:
+            return IRCColors.ORANGE      # Strong
+        else:
+            return IRCColors.RED         # Very strong
+
+    def _cloud_color(self, cloud_cover: int) -> str:
+        """Get color code based on cloud cover percentage."""
+        if cloud_cover < 20:
+            return IRCColors.YELLOW      # Clear
+        elif cloud_cover < 50:
+            return IRCColors.LIGHT_GREEN # Partly cloudy
+        elif cloud_cover < 80:
+            return IRCColors.LIGHT_CYAN  # Mostly cloudy
+        else:
+            return IRCColors.GREY        # Overcast
+
+    def _precip_color(self, precip_mm: float) -> str:
+        """Get color code based on precipitation amount (mm)."""
+        if precip_mm < 1:
+            return IRCColors.LIGHT_GREEN # Light/none
+        elif precip_mm < 5:
+            return IRCColors.CYAN        # Light rain
+        elif precip_mm < 10:
+            return IRCColors.LIGHT_BLUE  # Moderate rain
+        else:
+            return IRCColors.BLUE        # Heavy rain
 
     # ─── Rate limiting ────────────────────────────────────────────
 
@@ -356,28 +448,34 @@ class IRCBot:
 
             location_display = f"{city_name}, {country}" if country else city_name
 
-            # Matrix green values
-            C = IRCColors
-            temp_text = f"{B}{LG}{temp_c}C{R}/{B}{LG}{temp_f}F{R}"
-            feels_text = f"{LG}{feels_c}C{R}/{LG}{feels_f}F{R}"
-            desc_text = C.color(desc, C.LIGHT_GREEN)
+            # Temperature-based coloring
+            temp_color = self._temp_color(temp_c)
+            feels_color = self._temp_color(feels_c)
+            temp_text = f"{B}{temp_color}{temp_c}°C{R} {COLOR_PRIMARY}/{R} {B}{temp_color}{temp_f}°F{R}"
+            feels_text = f"{feels_color}{feels_c}°C{R} {COLOR_PRIMARY}/{R} {feels_color}{feels_f}°F{R}"
+            desc_text = f"{B}{C.YELLOW}{desc}{R}"
 
-            line1 = self._header(f"Weather {BOX_SEP} {location_display}")
+            # Apply color helpers to all weather data
+            humidity_color = self._humidity_color(humidity)
+            wind_color = self._wind_color(wind_speed)
+            cloud_color = self._cloud_color(cloud_cover)
+
+            line1 = self._header(f"Weather {BOX_SEP} {B}{COLOR_ACCENT}{location_display}{R}")
             line2 = self._arrow_line(
-                f"{B}{G}Cond{R}: {desc_text}  "
-                f"{B}{G}Temp{R}: {temp_text}  "
-                f"{B}{G}Feels{R}: {feels_text}"
+                f"{self._label('Condition')}: {desc_text}  "
+                f"{self._label('Temp')}: {temp_text}  "
+                f"{self._label('Feels')}: {feels_text}"
             )
             line3 = self._arrow_line(
-                f"{B}{G}Humid{R}: {B}{LG}{humidity}%{R}  "
-                f"{B}{G}Wind{R}: {LG}{wind_speed}km/h {wind_compass}{R}  "
-                f"{B}{G}Cloud{R}: {LG}{cloud_cover}%{R}"
+                f"{self._label('Humidity')}: {B}{humidity_color}{humidity}%{R}  "
+                f"{self._label('Wind')}: {B}{wind_color}{wind_speed}km/h{R} {COLOR_ACCENT}{wind_compass}{R}  "
+                f"{self._label('Clouds')}: {B}{cloud_color}{cloud_cover}%{R}"
             )
             line4 = self._arrow_line(
-                f"{B}{G}Press{R}: {LG}{pressure}hPa{R}  "
-                f"{B}{G}Vis{R}: {LG}{visibility_km}km{R}  "
-                f"{B}{G}Rise{R}: {B}{LG}{sunrise}{R}  "
-                f"{B}{G}Set{R}: {LG}{sunset}{R}"
+                f"{self._label('Pressure')}: {COLOR_VALUE}{pressure}hPa{R}  "
+                f"{self._label('Visibility')}: {COLOR_VALUE}{visibility_km}km{R}  "
+                f"{self._label('Sunrise')}: {B}{C.YELLOW}{sunrise}{R}  "
+                f"{self._label('Sunset')}: {B}{C.ORANGE}{sunset}{R}"
             )
 
             return f"{line1}\n{line2}\n{line3}\n{line4}"
@@ -419,7 +517,7 @@ class IRCBot:
             daily = data['daily']
 
             location_display = f"{city_name}, {country}" if country else city_name
-            forecasts = [self._header(f"Forecast {BOX_SEP} {location_display}")]
+            forecasts = [self._header(f"Forecast {BOX_SEP} {B}{COLOR_ACCENT}{location_display}{R}")]
 
             for i in range(min(days, 3)):
                 date = daily['time'][i]
@@ -433,18 +531,23 @@ class IRCBot:
                 precip_sum = daily.get('precipitation_sum', [0])[i]
                 precip_prob = daily.get('precipitation_probability_max', [0])[i]
 
-                date_text = f"{B}{LG}{date}{R}"
-                desc_text = f"{LG}{desc}{R}"
-                high_text = f"{B}{LG}{max_temp_c}C{R}/{B}{LG}{max_temp_f}F{R}"
-                low_text = f"{LG}{min_temp_c}C{R}/{LG}{min_temp_f}F{R}"
-                precip_text = f"{LG}{precip_sum:.1f}mm{R}"
-                precip_prob_text = f"{LG}{precip_prob}%{R}"
+                # Temperature-based coloring
+                max_color = self._temp_color(max_temp_c)
+                min_color = self._temp_color(min_temp_c)
+                precip_color = self._precip_color(precip_sum)
+
+                date_text = f"{B}{COLOR_INFO}{date}{R}"
+                desc_text = f"{C.YELLOW}{desc}{R}"
+                high_text = f"{B}{max_color}{max_temp_c}°C{R}{COLOR_PRIMARY}/{R}{B}{max_color}{max_temp_f}°F{R}"
+                low_text = f"{min_color}{min_temp_c}°C{R}{COLOR_PRIMARY}/{R}{min_color}{min_temp_f}°F{R}"
+                precip_text = f"{B}{precip_color}{precip_sum:.1f}mm{R}"
+                precip_prob_text = f"{precip_color}{precip_prob}%{R}"
 
                 forecast_msg = self._arrow_line(
-                    f"{date_text} {desc_text} "
-                    f"{B}{G}Hi{R}: {high_text}  "
-                    f"{B}{G}Lo{R}: {low_text}  "
-                    f"{B}{G}Precip{R}: {precip_text} ({precip_prob_text})"
+                    f"{date_text} {BOX_SEP} {desc_text}  "
+                    f"{self._label('High')}: {high_text}  "
+                    f"{self._label('Low')}: {low_text}  "
+                    f"{self._label('Rain')}: {precip_text} {COLOR_PRIMARY}({precip_prob_text}){R}"
                 )
                 forecasts.append(forecast_msg)
 
@@ -471,12 +574,12 @@ class IRCBot:
                     geo_data = geo_response.json()
                     if geo_data.get('results'):
                         current_time = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
-                        return self._info(f"{B}{LG}{current_time}{R}")
+                        return f"{self._header('Time')} {B}{C.YELLOW}{current_time}{R}"
 
                 return self._error(f"Could not find location '{location}'")
             else:
                 current_time = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
-                return self._info(f"{B}{LG}{current_time}{R}")
+                return f"{self._header('Time')} {B}{C.YELLOW}{current_time}{R}"
 
         except Exception:
             return self._error("Error getting time")
@@ -499,8 +602,8 @@ class IRCBot:
                     if len(meaning) > 300:
                         meaning = meaning[:297] + "..."
 
-                    word_text = f"{B}{LG}{word}{R}"
-                    return f"{self._header('Urban Dictionary')}\n{self._arrow_line(f'{word_text} {G}{DIVIDER}{R} {LG}{meaning}{R}')}"
+                    word_text = f"{B}{C.PINK}{word}{R}"
+                    return f"{self._header('Urban Dictionary')}\n{self._arrow_line(f'{word_text} {COLOR_PRIMARY}{DIVIDER*3}{R} {COLOR_ACCENT}{meaning}{R}')}"
                 else:
                     return self._error(f"No definition found for '{term}'")
             else:
@@ -514,13 +617,15 @@ class IRCBot:
     def coin_flip(self) -> str:
         """Flip a coin."""
         result = random.choice(["HEADS", "TAILS"])
+        coin_color = C.YELLOW if result == "HEADS" else C.LIGHT_GREY
         art = (
-            f"{LG}  _____  {R}\n"
-            f"{LG} /     \\ {R}\n"
-            f"{LG}|   {B}{LG}{'H' if result == 'HEADS' else 'T'}{R}{LG}   |{R}\n"
-            f"{LG} \\_____/ {R}"
+            f"{coin_color}  _____  {R}\n"
+            f"{coin_color} /     \\ {R}\n"
+            f"{coin_color}|   {B}{'H' if result == 'HEADS' else 'T'}{R}{coin_color}   |{R}\n"
+            f"{coin_color} \\_____/ {R}"
         )
-        return f"{art}\n{self._info(f'{B}{LG}{result}{R}')}"
+        result_text = f"{B}{coin_color}{result}{R}"
+        return f"{self._header('Coin Flip')}\n{art}\n{self._arrow_line(f'{STAR} {result_text}')}"
 
     def roll_dice(self, dice_str: str = "1d6") -> str:
         """Roll dice (e.g., 2d6, 1d20)."""
@@ -540,14 +645,14 @@ class IRCBot:
             rolls = [random.randint(1, sides) for _ in range(num)]
             total = sum(rolls)
 
-            dice_text = f"{B}{LG}{num}d{sides}{R}"
-            total_text = f"{B}{LG}{total}{R}"
+            dice_text = f"{B}{C.PURPLE}{num}d{sides}{R}"
+            total_text = f"{B}{C.YELLOW}{total}{R}"
 
             if num == 1:
-                return f"{self._header('Dice')} {dice_text} {G}{ARROW}{R} {total_text}"
+                return f"{self._header('Dice Roll')} {dice_text} {B}{COLOR_PRIMARY}{ARROW}{R} {total_text}"
             else:
-                rolls_text = f"{LG}{rolls}{R}"
-                return f"{self._header('Dice')} {dice_text} {G}{ARROW}{R} {rolls_text} = {total_text}"
+                rolls_text = f"{COLOR_ACCENT}{rolls}{R}"
+                return f"{self._header('Dice Roll')} {dice_text} {B}{COLOR_PRIMARY}{ARROW}{R} {rolls_text} {COLOR_PRIMARY}={R} {total_text}"
 
         except (ValueError, OverflowError):
             return self._error("Invalid dice format (use: 2d6, 1d20)")
@@ -558,12 +663,21 @@ class IRCBot:
             return self._error("Ask me a question!")
 
         response = random.choice(self.eightball_responses)
+
+        # Color based on response type
+        if response in ["It is certain", "It is decidedly so", "Without a doubt", "Yes definitely", "You may rely on it"]:
+            resp_color = COLOR_SUCCESS
+        elif response in ["Don't count on it", "My reply is no", "My sources say no", "Outlook not so good", "Very doubtful"]:
+            resp_color = COLOR_ERROR
+        else:
+            resp_color = COLOR_WARNING
+
         ball = (
-            f"{G}  ___  {R}\n"
-            f"{G} / {B}{LG}8{R} {G}\\ {R}\n"
-            f"{G} \\___/ {R}"
+            f"{C.PURPLE}  ___  {R}\n"
+            f"{C.PURPLE} / {B}{C.PINK}8{R} {C.PURPLE}\\ {R}\n"
+            f"{C.PURPLE} \\___/ {R}"
         )
-        return f"{ball}\n{self._info(f'{B}{LG}{response}{R}')}"
+        return f"{self._header('Magic 8-Ball')}\n{ball}\n{self._arrow_line(f'{B}{resp_color}{response}{R}')}"
 
     def rps(self, choice: str) -> str:
         """Rock Paper Scissors."""
@@ -578,27 +692,33 @@ class IRCBot:
 
         bot_choice = random.choice(choices)
 
+        # Emoji-style icons for choices
+        icons = {'rock': '✊', 'paper': '✋', 'scissors': '✌'}
+
         if choice == bot_choice:
-            result_color = LG
+            result_color = COLOR_WARNING
             result = "DRAW"
+            result_icon = DOT
         elif (choice == 'rock' and bot_choice == 'scissors') or \
              (choice == 'paper' and bot_choice == 'rock') or \
              (choice == 'scissors' and bot_choice == 'paper'):
-            result_color = LG
+            result_color = COLOR_SUCCESS
             result = "YOU WIN"
+            result_icon = STAR
         else:
-            result_color = IRCColors.RED
+            result_color = COLOR_ERROR
             result = "YOU LOSE"
+            result_icon = "✗"
 
-        you_text = f"{B}{LG}{choice.upper()}{R}"
-        bot_text = f"{B}{LG}{bot_choice.upper()}{R}"
-        result_text = f"{B}{result_color}{result}{R}"
-        return f"{self._header('Rock Paper Scissors')} {you_text} vs {bot_text} {G}{ARROW}{R} {result_text}"
+        you_text = f"{B}{C.CYAN}{choice.upper()}{R} {icons[choice]}"
+        bot_text = f"{B}{C.PINK}{bot_choice.upper()}{R} {icons[bot_choice]}"
+        result_text = f"{B}{result_color}{result_icon} {result}{R}"
+        return f"{self._header('Rock Paper Scissors')} {you_text} {COLOR_PRIMARY}vs{R} {bot_text} {B}{COLOR_PRIMARY}{ARROW}{R} {result_text}"
 
     def get_fact(self) -> str:
         """Get a random fun fact."""
         fact = random.choice(self.facts)
-        return f"{self._header('Random Fact')}\n{self._arrow_line(f'{LG}{fact}{R}')}"
+        return f"{self._header('Random Fact')}\n{self._arrow_line(f'{STAR} {COLOR_ACCENT}{fact}{R}')}"
 
     # ─── Utility Commands ─────────────────────────────────────────
 
@@ -627,15 +747,15 @@ class IRCBot:
             else:
                 time_str = f"{elapsed // 86400}d ago"
 
-            nick_text = f"{B}{LG}{user['nick']}{R}"
-            time_text = f"{LG}{time_str}{R}"
-            channel_text = f"{LG}{user['channel']}{R}"
-            msg_text = f"{LG}{user['message']}{R}"
+            nick_text = f"{B}{C.PINK}{user['nick']}{R}"
+            time_text = f"{C.YELLOW}{time_str}{R}"
+            channel_text = f"{COLOR_ACCENT}{user['channel']}{R}"
+            msg_text = f"{COLOR_VALUE}{user['message']}{R}"
 
             return (
-                f"{self._header('Seen')}\n"
-                f"{self._arrow_line(f'{nick_text} {G}--{R} {time_text} in {channel_text}')}\n"
-                f"{self._arrow_line(f'{B}{G}Saying{R}: {msg_text}')}"
+                f"{self._header('User Seen')}\n"
+                f"{self._arrow_line(f'{nick_text} {COLOR_PRIMARY}{DIVIDER*2}{R} {time_text} in {channel_text}')}\n"
+                f"{self._arrow_line(f'{self._label('Message')}: {msg_text}')}"
             )
         else:
             return self._error(f"Haven't seen {nick} yet")
@@ -648,7 +768,7 @@ class IRCBot:
             'timestamp': time.time()
         })
         quote_num = len(self.quotes)
-        return self._success(f"Quote #{quote_num} added by {added_by}")
+        return self._success(f"Quote {B}{C.YELLOW}#{quote_num}{R} added by {B}{C.CYAN}{added_by}{R}")
 
     def get_random_quote(self) -> str:
         """Get a random quote."""
@@ -657,13 +777,13 @@ class IRCBot:
 
         quote_data = random.choice(self.quotes)
         quote_num = self.quotes.index(quote_data) + 1
-        quote_text = f"{LG}{quote_data['quote']}{R}"
-        by_text = f"{LG}{quote_data['added_by']}{R}"
+        quote_text = f"{COLOR_ACCENT}{quote_data['quote']}{R}"
+        by_text = f"{B}{C.PINK}{quote_data['added_by']}{R}"
         dq = '"'
         return (
-            f"{self._header(f'Quote #{quote_num}')}\n"
-            f"{self._arrow_line(f'{dq}' + quote_text + f'{dq}')}\n"
-            f"{self._arrow_line(f'{G}--{R} added by {by_text}')}"
+            f"{self._header(f'Quote {B}{C.YELLOW}#{quote_num}{R}')}\n"
+            f"{self._arrow_line(f'{C.YELLOW}{dq}{R}' + quote_text + f'{C.YELLOW}{dq}{R}')}\n"
+            f"{self._arrow_line(f'{COLOR_PRIMARY}{DIVIDER*2}{R} added by {by_text}')}"
         )
 
     def get_uptime(self) -> str:
@@ -684,12 +804,12 @@ class IRCBot:
         parts.append(f"{seconds}s")
 
         uptime_str = " ".join(parts)
-        return self._info(f"{B}{G}Uptime{R}: {B}{LG}{uptime_str}{R}")
+        return f"{self._header('Bot Uptime')} {B}{COLOR_SUCCESS}{uptime_str}{R}"
 
     def do_ping(self) -> str:
         """Return a pong with timestamp."""
         ts = time.strftime("%H:%M:%S", time.gmtime())
-        return self._info(f"{B}{LG}PONG!{R} {LG}{ts}{R}")
+        return f"{self._header('Pong')} {B}{COLOR_SUCCESS}PONG!{R} {COLOR_ACCENT}{DOT}{R} {C.YELLOW}{ts}{R}"
 
     def hash_text(self, text: str) -> str:
         """Hash text with multiple algorithms."""
@@ -698,18 +818,11 @@ class IRCBot:
         sha256 = hashlib.sha256(text.encode()).hexdigest()
         sha256_short = sha256[:32] + "..."
 
-        md5_label = f"{B}{G}MD5{R}"
-        sha1_label = f"{B}{G}SHA1{R}"
-        sha256_label = f"{B}{G}SHA256{R}"
-        md5_val = f"{LG}{md5}{R}"
-        sha1_val = f"{LG}{sha1}{R}"
-        sha256_val = f"{LG}{sha256_short}{R}"
-
         return (
-            f"{self._header('Hash')}\n"
-            f"{self._arrow_line(f'{md5_label}:    {md5_val}')}\n"
-            f"{self._arrow_line(f'{sha1_label}:   {sha1_val}')}\n"
-            f"{self._arrow_line(f'{sha256_label}: {sha256_val}')}"
+            f"{self._header('Cryptographic Hash')}\n"
+            f"{self._arrow_line(f'{self._label('MD5')}:    {C.LIGHT_BLUE}{md5}{R}')}\n"
+            f"{self._arrow_line(f'{self._label('SHA1')}:   {C.CYAN}{sha1}{R}')}\n"
+            f"{self._arrow_line(f'{self._label('SHA256')}: {C.LIGHT_CYAN}{sha256_short}{R}')}"
         )
 
     def do_base64(self, mode: str, text: str) -> str:
@@ -717,11 +830,11 @@ class IRCBot:
         try:
             if mode in ('e', 'encode', 'enc'):
                 result = base64.b64encode(text.encode()).decode()
-                return f"{self._header('Base64 Encode')}\n{self._arrow_line(f'{LG}{result}{R}')}"
+                return f"{self._header('Base64 Encode')}\n{self._arrow_line(f'{COLOR_ACCENT}{result}{R}')}"
             elif mode in ('d', 'decode', 'dec'):
                 result = base64.b64decode(text.encode()).decode('utf-8', errors='replace')
                 result = Sanitizer.strip_irc_controls(result)[:300]
-                return f"{self._header('Base64 Decode')}\n{self._arrow_line(f'{LG}{result}{R}')}"
+                return f"{self._header('Base64 Decode')}\n{self._arrow_line(f'{COLOR_ACCENT}{result}{R}')}"
             else:
                 return self._error("Usage: %base64 <encode|decode> <text>")
         except Exception:
@@ -730,7 +843,7 @@ class IRCBot:
     def reverse_text(self, text: str) -> str:
         """Reverse a string."""
         reversed_text = text[::-1]
-        return f"{self._header('Reverse')}\n{self._arrow_line(f'{LG}{reversed_text}{R}')}"
+        return f"{self._header('Reverse Text')}\n{self._arrow_line(f'{COLOR_ACCENT}{reversed_text}{R}')}"
 
     def mock_text(self, text: str) -> str:
         """SpOnGeBoB mOcKiNg CaSe."""
@@ -738,7 +851,7 @@ class IRCBot:
             c.upper() if i % 2 == 0 else c.lower()
             for i, c in enumerate(text)
         )
-        return f"{self._arrow_line(f'{LG}{result}{R}')}"
+        return f"{self._header('Mock Text')}\n{self._arrow_line(f'{C.YELLOW}{result}{R}')}"
 
     def safe_calc(self, expr: str) -> str:
         """Safely evaluate a math expression."""
@@ -765,9 +878,9 @@ class IRCBot:
                 else:
                     result = f"{result:.6f}".rstrip('0').rstrip('.')
 
-            expr_text = f"{LG}{expr}{R}"
-            result_text = f"{B}{LG}{result}{R}"
-            return f"{self._header('Calc')} {expr_text} = {result_text}"
+            expr_text = f"{COLOR_ACCENT}{expr}{R}"
+            result_text = f"{B}{C.YELLOW}{result}{R}"
+            return f"{self._header('Calculator')} {expr_text} {COLOR_PRIMARY}={R} {result_text}"
         except ZeroDivisionError:
             return self._error("Division by zero")
         except Exception:
@@ -968,16 +1081,16 @@ class IRCBot:
         # ── Help ──
         elif command == f"{p}help":
             lines = [
-                self._header("le0 Bot Commands"),
-                f" {B}{LG}[Weather]{R}    {G}{p}weather/w <loc> {DIVIDER} {p}forecast/f <loc>{R}",
-                f" {B}{LG}[Info]{R}       {G}{p}urban/ud <term> {DIVIDER} {p}time [loc]{R}",
-                f" {B}{LG}[Fun]{R}        {G}{p}coin/flip {DIVIDER} {p}roll/dice [XdY] {DIVIDER} {p}8ball/8 <question>{R}",
-                f" {B}{LG}             {R}{G}{p}rps <r/p/s> {DIVIDER} {p}fact{R}",
-                f" {B}{LG}[Social]{R}     {G}{p}quote {DIVIDER} {p}addquote <text>{R}",
-                f" {B}{LG}[Utility]{R}    {G}{p}seen <nick> {DIVIDER} {p}ping {DIVIDER} {p}uptime{R}",
-                f" {B}{LG}[Tools]{R}      {G}{p}calc <expr> {DIVIDER} {p}hash <text> {DIVIDER} {p}base64/b64 <e/d> <text>{R}",
-                f" {B}{LG}[Text]{R}       {G}{p}reverse <text> {DIVIDER} {p}mock <text>{R}",
-                f" {B}{LG}[Help]{R}       {G}{p}help{R}",
+                self._header(f"le0 Bot Commands {BOX_SEP} Help Menu"),
+                f" {B}{C.CYAN}[Weather]{R}  {COLOR_ACCENT}{p}weather/w <loc>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}forecast/f <loc>{R}",
+                f" {B}{C.YELLOW}[Info]{R}     {COLOR_ACCENT}{p}urban/ud <term>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}time [loc]{R}",
+                f" {B}{C.PINK}[Fun]{R}      {COLOR_ACCENT}{p}coin/flip{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}roll/dice [XdY]{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}8ball/8 <q>{R}",
+                f"             {COLOR_ACCENT}{p}rps <r/p/s>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}fact{R}",
+                f" {B}{C.PURPLE}[Social]{R}   {COLOR_ACCENT}{p}quote{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}addquote <text>{R}",
+                f" {B}{C.LIGHT_GREEN}[Utility]{R}  {COLOR_ACCENT}{p}seen <nick>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}ping{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}uptime{R}",
+                f" {B}{C.ORANGE}[Tools]{R}    {COLOR_ACCENT}{p}calc <expr>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}hash <text>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}base64/b64 <e/d>{R}",
+                f" {B}{C.LIGHT_BLUE}[Text]{R}     {COLOR_ACCENT}{p}reverse <text>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}mock <text>{R}",
+                self._footer(f"Type {B}{COLOR_ACCENT}{p}help{R} anytime"),
             ]
             for line in lines:
                 self.send_message(channel, line)
@@ -1069,27 +1182,29 @@ if __name__ == "__main__":
         command_prefix="%"
     )
 
-    # Matrix startup banner
+    # Enhanced startup banner
     print(r"""
-     _       ___
-    | | ___ / _ \
-    | |/ _ \ | | |
-    | |  __/ |_| |
-    |_|\___|\___/
+    ╔═══════════════════════════════════════╗
+    ║     _       ___                       ║
+    ║    | | ___ / _ \                      ║
+    ║    | |/ _ \ | | |                     ║
+    ║    | |  __/ |_| |                     ║
+    ║    |_|\___|\___/                      ║
+    ║                                       ║
+    ║   ◆ IRC Bot v2.0 - Enhanced Theme    ║
+    ╠═══════════════════════════════════════╣
     """)
-    print("  [ MATRIX MODE ]")
-    print("  " + "=" * 40)
     p = bot.command_prefix
-    print(f"  [Weather]  {p}weather/w  {p}forecast/f")
-    print(f"  [Info]     {p}urban/ud   {p}time")
-    print(f"  [Fun]      {p}coin/flip  {p}roll/dice  {p}8ball/8")
-    print(f"             {p}rps        {p}fact")
-    print(f"  [Social]   {p}quote      {p}addquote")
-    print(f"  [Utility]  {p}seen       {p}ping   {p}uptime")
-    print(f"  [Tools]    {p}calc       {p}hash   {p}base64/b64")
-    print(f"  [Text]     {p}reverse    {p}mock")
-    print(f"  [Help]     {p}help")
-    print("  " + "=" * 40)
-    print("  Press Ctrl+C to stop\n")
+    print(f"    ║  Weather  │ {p}weather/w  {p}forecast/f    ║")
+    print(f"    ║  Info     │ {p}urban/ud   {p}time          ║")
+    print(f"    ║  Fun      │ {p}coin  {p}roll  {p}8ball  {p}rps ║")
+    print(f"    ║  Social   │ {p}quote  {p}addquote          ║")
+    print(f"    ║  Utility  │ {p}seen  {p}ping  {p}uptime     ║")
+    print(f"    ║  Tools    │ {p}calc  {p}hash  {p}base64     ║")
+    print(f"    ║  Text     │ {p}reverse  {p}mock            ║")
+    print(r"""    ╚═══════════════════════════════════════╝
+
+    ▸ Ready! Press Ctrl+C to stop
+    """)
 
     bot.run()
