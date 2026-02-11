@@ -291,21 +291,82 @@ class IRCBot:
         """Info message with icon."""
         return f"{B}{COLOR_INFO}{DOT}{R} {COLOR_ACCENT}{text}{R}"
 
+    def _wrap_text(self, text: str, max_width: int) -> list:
+        """Wrap text to fit within max_width, preserving color codes."""
+        lines = []
+        current_line = ""
+        current_visible = 0
+
+        # Split into words but keep color codes attached
+        i = 0
+        while i < len(text):
+            # Check for color codes
+            if text[i:i+1] in ['\x03', '\x02', '\x1D', '\x1F', '\x0F']:
+                # Add color code to current position
+                if text[i] == '\x03':
+                    # Color code format: \x03[NN][,NN]
+                    end = i + 1
+                    while end < len(text) and text[end].isdigit():
+                        end += 1
+                    if end < len(text) and text[end] == ',':
+                        end += 1
+                        while end < len(text) and text[end].isdigit():
+                            end += 1
+                    current_line += text[i:end]
+                    i = end
+                else:
+                    current_line += text[i]
+                    i += 1
+            elif text[i] == ' ':
+                if current_visible < max_width:
+                    current_line += ' '
+                    current_visible += 1
+                    i += 1
+                else:
+                    lines.append(current_line)
+                    current_line = ""
+                    current_visible = 0
+                    i += 1
+            else:
+                # Regular character
+                if current_visible >= max_width:
+                    lines.append(current_line)
+                    current_line = ""
+                    current_visible = 0
+                current_line += text[i]
+                current_visible += 1
+                i += 1
+
+        if current_line:
+            lines.append(current_line)
+
+        return lines if lines else [""]
+
     def _arrow_line(self, text: str) -> str:
         """Arrow-prefixed line with box sides."""
+        max_content_width = self.BOX_WIDTH - 5  # 5 for "║ ▸  ║"
         visible_len = len(self._strip_irc_colors(text))
-        padding_needed = self.BOX_WIDTH - visible_len - 5  # 5 for "║ ▸  ║"
-        if padding_needed < 0:
-            padding_needed = 0
+
+        if visible_len > max_content_width:
+            # Truncate if too long
+            text = self._strip_irc_colors(text)[:max_content_width - 3] + "..."
+            visible_len = len(text)
+
+        padding_needed = max_content_width - visible_len
         spaces = " " * padding_needed
         return f"{B}{COLOR_PRIMARY}{BOX_V}{R} {B}{COLOR_ACCENT}{ARROW}{R} {text}{spaces} {B}{COLOR_PRIMARY}{BOX_V}{R}"
 
     def _box_line(self, text: str) -> str:
         """Plain line with box sides (no arrow)."""
+        max_content_width = self.BOX_WIDTH - 4  # 4 for "║  ║"
         visible_len = len(self._strip_irc_colors(text))
-        padding_needed = self.BOX_WIDTH - visible_len - 4  # 4 for "║  ║"
-        if padding_needed < 0:
-            padding_needed = 0
+
+        if visible_len > max_content_width:
+            # Truncate if too long
+            text = self._strip_irc_colors(text)[:max_content_width - 3] + "..."
+            visible_len = len(text)
+
+        padding_needed = max_content_width - visible_len
         spaces = " " * padding_needed
         return f"{B}{COLOR_PRIMARY}{BOX_V}{R} {text}{spaces} {B}{COLOR_PRIMARY}{BOX_V}{R}"
 
@@ -636,8 +697,10 @@ class IRCBot:
                     definition = data['list'][0]
                     word = definition['word']
                     meaning = definition['definition'].replace('[', '').replace(']', '')
-                    if len(meaning) > 300:
-                        meaning = meaning[:297] + "..."
+                    # Truncate to fit in box (box width - word - separators - arrow - padding)
+                    max_meaning_len = 150
+                    if len(meaning) > max_meaning_len:
+                        meaning = meaning[:max_meaning_len - 3] + "..."
 
                     word_text = f"{B}{C.CYAN}{word}{R}"
                     return f"{self._header('Urban Dictionary')}\n{self._arrow_line(f'{word_text} {COLOR_PRIMARY}{DIVIDER*3}{R} {COLOR_ACCENT}{meaning}{R}')}\n{self._footer()}"
