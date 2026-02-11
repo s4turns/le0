@@ -264,19 +264,21 @@ class IRCBot:
     def _header(self, text: str) -> str:
         """Enhanced header with box drawing."""
         visible_len = len(self._strip_irc_colors(text))
-        padding = self.BOX_WIDTH - visible_len - 6  # 6 for "╔══  ══╗"
+        # Total width = 1(╔) + padding + 1(space) + text + 1(space) + padding + 1(╗) = BOX_WIDTH
+        # So: padding_total = BOX_WIDTH - text - 4
+        padding = self.BOX_WIDTH - visible_len - 4
         left_pad = padding // 2
         right_pad = padding - left_pad
-        return f"{B}{COLOR_PRIMARY}{BOX_TL}{BOX_H*(left_pad+2)} {text} {BOX_H*(right_pad+2)}{BOX_TR}{R}"
+        return f"{B}{COLOR_PRIMARY}{BOX_TL}{BOX_H*left_pad} {text} {BOX_H*right_pad}{BOX_TR}{R}"
 
     def _footer(self, text: str = "") -> str:
         """Footer to close boxes."""
         if text:
             visible_len = len(self._strip_irc_colors(text))
-            padding = self.BOX_WIDTH - visible_len - 6
+            padding = self.BOX_WIDTH - visible_len - 4
             left_pad = padding // 2
             right_pad = padding - left_pad
-            return f"{B}{COLOR_PRIMARY}{BOX_BL}{BOX_H*(left_pad+2)} {text} {BOX_H*(right_pad+2)}{BOX_BR}{R}"
+            return f"{B}{COLOR_PRIMARY}{BOX_BL}{BOX_H*left_pad} {text} {BOX_H*right_pad}{BOX_BR}{R}"
         return f"{B}{COLOR_PRIMARY}{BOX_BL}{BOX_H*(self.BOX_WIDTH-2)}{BOX_BR}{R}"
 
     def _error(self, text: str) -> str:
