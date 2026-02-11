@@ -1,121 +1,138 @@
 # le0 - IRC Bot
 
-A Python IRC bot with weather, utilities, and fun commands with colorful output!
+A Python IRC bot with weather, utilities, fun commands, and text tools. ASCII-styled output with IRC color formatting.
 
 ## Features
 
-### Weather Commands
-- **Current Weather**: Get real-time weather with colorful temperature displays
-- **Weather Forecast**: 3-day forecasts with precipitation data (no UV index)
+### Weather
+- Current weather with temperature, humidity, wind, pressure, visibility, sunrise/sunset
+- 3-day forecast with highs, lows, and precipitation data
 
-### Info Commands
-- **Urban Dictionary**: Look up slang and terms
-- **Time**: Get current time for any location
+### Info
+- Urban Dictionary lookups
+- Current time (UTC)
 
-### Fun Commands
-- **Coin Flip**: Flip a coin
-- **Dice Roll**: Roll dice (supports any XdY format)
-- **Magic 8-Ball**: Ask the magic 8-ball a question
+### Fun
+- Coin flip with ASCII art
+- Dice rolling (any XdY format)
+- Magic 8-ball with ASCII art
+- Rock Paper Scissors
+- Random fun facts
 
-### Social Features
-- **Quote Database**: Save and retrieve random quotes from chat
+### Social
+- Quote database -- save and retrieve quotes from chat
 
-### Utility Commands
-- **Seen Tracker**: Check when someone was last active
-- **Help**: Show all available commands
+### Utility
+- Seen tracker -- check when someone was last active
+- Ping / uptime
 
-### Technical Features
-- IRC color formatting for beautiful output
-- SSL/TLS support for secure connections
-- Temperature-based color coding (hot = red, cold = blue)
-- Easy to configure for any IRC network
-- Anti-flood protection
+### Tools
+- Safe math calculator
+- MD5 / SHA1 / SHA256 hashing
+- Base64 encode and decode
+- Text reversal
+- Mocking case (SpOnGeBoB)
+
+### Security
+- Input sanitization on all commands (CRLF injection, IRC control chars, length limits)
+- URL parameter encoding on all API calls
+- Per-user rate limiting (2s cooldown)
+- Nickname validation against IRC spec
+- Safe eval with no builtins for calculator
+- Exponent cap to prevent resource exhaustion
+
+### Technical
+- SSL/TLS support
+- Temperature-based color coding
+- ASCII-styled output (no emoji dependencies)
+- Anti-flood protection between multi-line messages
+- Configurable command prefix
 
 ## Installation
 
-1. Install Python 3.7 or higher
+Python 3.7+
 
-2. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
 ## Configuration
 
-Edit the bot configuration at the bottom of `irc_bot.py`:
+Edit the bot configuration at the bottom of `le0.py`:
 
 ```python
 bot = IRCBot(
-    server="irc.blcknd.network",       # IRC server address
-    port=6697,                          # Port (6697 for SSL, 6667 for non-SSL)
-    nickname="le0",                     # Your bot's nickname
-    channels=["#test"],                 # List of channels to join
-    use_ssl=True,                       # Use SSL/TLS
-    password=None,                      # Server password (optional)
-    command_prefix="%"                  # Command trigger (default: "%", can use "!", ".", etc.)
+    server="irc.blcknd.network",
+    port=6697,
+    nickname="le0",
+    channels=["#d0mer"],
+    use_ssl=True,
+    password=None,
+    command_prefix="%"
 )
 ```
 
 ## Usage
 
-### Running the Bot
-
 ```bash
-python3 irc_bot.py
+python3 le0.py
 ```
 
-### Available Commands
+## Commands
 
-#### Weather Commands
 ```
-%weather <location> or %w <location>     - Get current weather
-%forecast <location> or %f <location>    - Get 3-day weather forecast
-```
+WEATHER
+  %weather <location>  or  %w <location>      Current weather
+  %forecast <location> or  %f <location>      3-day forecast
 
-#### Info Commands
-```
-%urban <term> or %ud <term>              - Urban Dictionary lookup
-%time [location]                         - Get current time
-```
+INFO
+  %urban <term>        or  %ud <term>         Urban Dictionary lookup
+  %time [location]                            Current time (UTC)
 
-#### Fun Commands
-```
-%coin or %flip                           - Flip a coin
-%roll [XdY] or %dice [XdY]              - Roll dice (default: 1d6)
-%8ball <question> or %8 <question>      - Ask the magic 8-ball
-```
+FUN
+  %coin  or  %flip                            Flip a coin
+  %roll [XdY]  or  %dice [XdY]               Roll dice (default: 1d6)
+  %8ball <question>  or  %8 <question>        Magic 8-ball
+  %rps <rock|paper|scissors>                  Rock Paper Scissors
+  %fact                                       Random fun fact
 
-#### Social Commands
-```
-%quote                                   - Get a random quote from database
-%addquote <text>                         - Add a quote to database
-```
+SOCIAL
+  %quote                                      Random quote from database
+  %addquote <text>                            Add a quote
 
-#### Utility Commands
-```
-%seen <nick>                             - Check when someone was last active
-%help                                    - Show all commands
+UTILITY
+  %seen <nick>                                When was a user last active
+  %ping                                       Pong
+  %uptime                                     Bot uptime
+
+TOOLS
+  %calc <expression>                          Math calculator
+  %hash <text>                                MD5/SHA1/SHA256 hashes
+  %base64 <encode|decode> <text>              Base64 encode/decode
+  %reverse <text>                             Reverse text
+  %mock <text>                                SpOnGeBoB mOcKiNg CaSe
+
+HELP
+  %help                                       Show all commands in IRC
 ```
 
 ## Example Output
 
 ```
 <user> %weather London
-<le0> London, United Kingdom → Partly cloudy | 🌡️ 12°C (54°F) | Feels: 10°C (50°F)
-<le0> 💧 76% | 💨 15km/h W | ☁️ 65%
-<le0> 📊 1013hPa | 👁️ 10km | 🌅 07:45 | 🌇 16:30
+<le0> [-- Weather :: London, United Kingdom --]
+<le0>  >> Cond: Partly cloudy  Temp: 12C/54F  Feels: 10C/50F
+<le0>  >> Humid: 76%  Wind: 15km/h W  Cloud: 65%
+<le0>  >> Press: 1013hPa  Vis: 10km  Rise: 07:45  Set: 16:30
 
 <user> %roll 2d6
-<le0> 🎲 2d6 → [4, 5] = 9
+<le0> [-- Dice --] 2d6 >> [4, 5] = 9
 
-<user> %8ball Will it rain tomorrow?
-<le0> 🎱 Outlook good
+<user> %calc 2^10
+<le0> [-- Calc --] 2**10 = 1024
 
-<user> %addquote "This bot is awesome!"
-<le0> ✓ Quote #1 added
-
-<user> %quote
-<le0> 💬 Quote #1: This bot is awesome!
+<user> %rps rock
+<le0> [-- Rock Paper Scissors --] ROCK vs SCISSORS >> YOU WIN
 ```
 
-Note: Actual output includes IRC color codes for a much prettier display!
+Actual output includes IRC color codes for a much prettier display.
