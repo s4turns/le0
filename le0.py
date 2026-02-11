@@ -656,11 +656,17 @@ class IRCBot:
         result = random.choice(["HEADS", "TAILS"])
         coin_color = C.YELLOW if result == "HEADS" else C.LIGHT_GREY
         letter = 'H' if result == 'HEADS' else 'T'
+
+        line1 = f"{coin_color}  _____  {R}"
+        line2 = f"{coin_color} /     \\ {R}"
+        line3 = f"{coin_color}|   {B}{letter}{R}{coin_color}   |{R}"
+        line4 = f"{coin_color} \\_____/ {R}"
+
         art = (
-            f"{self._box_line(f'{coin_color}  _____  {R}')}\n"
-            f"{self._box_line(f'{coin_color} /     \\\\ {R}')}\n"
-            f"{self._box_line(f'{coin_color}|   {B}{letter}{R}{coin_color}   |{R}')}\n"
-            f"{self._box_line(f'{coin_color} \\\\_____/ {R}')}"
+            f"{self._box_line(line1)}\n"
+            f"{self._box_line(line2)}\n"
+            f"{self._box_line(line3)}\n"
+            f"{self._box_line(line4)}"
         )
         result_text = f"{B}{coin_color}{result}{R}"
         return f"{self._header('Coin Flip')}\n{art}\n{self._arrow_line(f'{STAR} {result_text}')}\n{self._footer()}"
@@ -710,10 +716,14 @@ class IRCBot:
         else:
             resp_color = COLOR_WARNING
 
+        line1 = f"{C.YELLOW}  ___  {R}"
+        line2 = f"{C.YELLOW} / {B}{C.CYAN}8{R} {C.YELLOW}\\ {R}"
+        line3 = f"{C.YELLOW} \\___/ {R}"
+
         ball = (
-            f"{self._box_line(f'{C.YELLOW}  ___  {R}')}\n"
-            f"{self._box_line(f'{C.YELLOW} / {B}{C.CYAN}8{R} {C.YELLOW}\\\\ {R}')}\n"
-            f"{self._box_line(f'{C.YELLOW} \\\\___/ {R}')}"
+            f"{self._box_line(line1)}\n"
+            f"{self._box_line(line2)}\n"
+            f"{self._box_line(line3)}"
         )
         return f"{self._header('Magic 8-Ball')}\n{ball}\n{self._arrow_line(f'{B}{resp_color}{response}{R}')}\n{self._footer()}"
 
