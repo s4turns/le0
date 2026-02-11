@@ -659,9 +659,10 @@ class IRCBot:
         quote_num = self.quotes.index(quote_data) + 1
         quote_text = f"{LG}{quote_data['quote']}{R}"
         by_text = f"{LG}{quote_data['added_by']}{R}"
+        dq = '"'
         return (
             f"{self._header(f'Quote #{quote_num}')}\n"
-            f"{self._arrow_line(f'\"' + quote_text + f'\"')}\n"
+            f"{self._arrow_line(f'{dq}' + quote_text + f'{dq}')}\n"
             f"{self._arrow_line(f'{G}--{R} added by {by_text}')}"
         )
 
