@@ -11,6 +11,7 @@ import random
 import hashlib
 import base64
 import urllib.parse
+import os
 import sys
 import importlib
 import requests
@@ -1415,12 +1416,15 @@ class IRCBot:
 
 
 if __name__ == "__main__":
-    config_name = sys.argv[1].removesuffix('.py') if len(sys.argv) > 1 else "config"
-    try:
-        config = importlib.import_module(config_name)
-    except ModuleNotFoundError:
-        print(f"Error: config file '{config_name}.py' not found")
+    config_arg = sys.argv[1] if len(sys.argv) > 1 else "config"
+    config_file = config_arg if config_arg.endswith('.py') else config_arg + ".py"
+    config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), config_file)
+    if not os.path.isfile(config_path):
+        print(f"Error: config file '{config_file}' not found")
         sys.exit(1)
+    spec = importlib.util.spec_from_file_location("config", config_path)
+    config = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(config)
 
     bot = IRCBot(
         server=config.SERVER,
