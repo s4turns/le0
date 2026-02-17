@@ -550,7 +550,7 @@ class IRCBot:
             temp_color = self._temp_color(temp_c)
             feels_color = self._temp_color(feels_c)
             temp_text = f"{B}{temp_color}{temp_c}°C{R} {COLOR_PRIMARY}/{R} {B}{temp_color}{temp_f}°F{R}"
-            feels_text = f"{feels_color}{feels_c}°C{R} {COLOR_PRIMARY}/{R} {feels_color}{feels_f}°F{R}"
+            feels_text = f"{B}{feels_color}{feels_c}°C{R} {COLOR_PRIMARY}/{R} {B}{feels_color}{feels_f}°F{R}"
             desc_text = f"{B}{C.YELLOW}{desc}{R}"
 
             # Apply color helpers to all weather data
