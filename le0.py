@@ -13,6 +13,7 @@ import base64
 import urllib.parse
 import requests
 from typing import Optional
+import config
 
 
 class IRCColors:
@@ -172,7 +173,10 @@ class Sanitizer:
 class IRCBot:
     def __init__(self, server: str, port: int, nickname: str, channels: list,
                  use_ssl: bool = False, password: Optional[str] = None,
-                 command_prefix: str = "%"):
+                 command_prefix: str = "%",
+                 nickserv_pass: Optional[str] = None,
+                 sasl_username: Optional[str] = None,
+                 sasl_password: Optional[str] = None):
         self.server = server
         self.port = port
         self.nickname = nickname
@@ -180,6 +184,9 @@ class IRCBot:
         self.use_ssl = use_ssl
         self.password = password
         self.command_prefix = command_prefix
+        self.nickserv_pass = nickserv_pass
+        self.sasl_username = sasl_username
+        self.sasl_password = sasl_password
         self.irc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.start_time = time.time()
 
@@ -492,8 +499,53 @@ class IRCBot:
         if self.password:
             self.send_raw(f"PASS {self.password}")
 
-        self.send_raw(f"NICK {self.nickname}")
-        self.send_raw(f"USER {self.nickname} 0 * :{self.nickname}")
+        # SASL authentication
+        if self.sasl_username and self.sasl_password:
+            print("Requesting SASL authentication...")
+            self.send_raw("CAP REQ :sasl")
+            self.send_raw(f"NICK {self.nickname}")
+            self.send_raw(f"USER {self.nickname} 0 * :{self.nickname}")
+
+            # Wait for ACK and send credentials
+            buf = ""
+            while True:
+                buf += self.irc.recv(2048).decode("UTF-8", errors="ignore")
+                if "ACK :sasl" in buf or "ACK :sasl" in buf.lower():
+                    break
+                if "NAK" in buf:
+                    print("SASL not supported by server, continuing without it")
+                    self.send_raw("CAP END")
+                    print("Connected!")
+                    return
+
+            self.send_raw("AUTHENTICATE PLAIN")
+
+            buf = ""
+            while True:
+                buf += self.irc.recv(2048).decode("UTF-8", errors="ignore")
+                if "AUTHENTICATE +" in buf:
+                    break
+
+            # SASL PLAIN: base64(\0username\0password)
+            auth_string = f"\0{self.sasl_username}\0{self.sasl_password}"
+            encoded = base64.b64encode(auth_string.encode()).decode()
+            self.send_raw(f"AUTHENTICATE {encoded}")
+
+            buf = ""
+            while True:
+                buf += self.irc.recv(2048).decode("UTF-8", errors="ignore")
+                if " 903 " in buf:
+                    print("SASL authentication successful!")
+                    break
+                if " 904 " in buf or " 905 " in buf:
+                    print("SASL authentication failed!")
+                    break
+
+            self.send_raw("CAP END")
+        else:
+            self.send_raw(f"NICK {self.nickname}")
+            self.send_raw(f"USER {self.nickname} 0 * :{self.nickname}")
+
         print("Connected!")
 
     def send_raw(self, message: str):
@@ -1304,6 +1356,9 @@ class IRCBot:
                         print("\nConnection established! Joining channels...")
                         for channel in self.channels:
                             self.join_channel(channel)
+                        if self.nickserv_pass:
+                            print("Identifying with NickServ...")
+                            self.send_raw(f"PRIVMSG NickServ :IDENTIFY {self.nickserv_pass}")
                         break
 
             except Exception as e:
@@ -1353,13 +1408,16 @@ class IRCBot:
 
 if __name__ == "__main__":
     bot = IRCBot(
-        server="irc.blcknd.network",
-        port=6697,
-        nickname="le0",
-        channels=["#d0m3r", "#blcknd"],
-        use_ssl=True,
-        password=None,
-        command_prefix="%"
+        server=config.SERVER,
+        port=config.PORT,
+        nickname=config.NICKNAME,
+        channels=config.CHANNELS,
+        use_ssl=config.USE_SSL,
+        password=config.PASSWORD,
+        command_prefix=config.COMMAND_PREFIX,
+        nickserv_pass=config.NICKSERV_PASS,
+        sasl_username=config.SASL_USERNAME,
+        sasl_password=config.SASL_PASSWORD,
     )
 
     # Enhanced startup banner
