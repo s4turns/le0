@@ -259,7 +259,7 @@ class IRCBot:
 
     # ─── Enhanced formatting helpers ───────────────────────────────
 
-    BOX_WIDTH = 80  # Fixed width for all boxes
+    BOX_WIDTH = 100  # Fixed width for all boxes
 
     def _strip_irc_colors(self, text: str) -> str:
         """Strip IRC color codes to measure visible text length."""
