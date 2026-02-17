@@ -501,6 +501,7 @@ class IRCBot:
                 context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
                 context.check_hostname = False
                 context.verify_mode = ssl.CERT_NONE
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
             self.irc = context.wrap_socket(self.irc, server_hostname=self.server)
 
         self.irc.connect((self.server, self.port))
