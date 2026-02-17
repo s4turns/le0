@@ -261,6 +261,29 @@ class IRCBot:
         text = text.replace('\x0F', '')  # Reset
         return text
 
+    def _truncate_visible(self, text: str, max_visible: int) -> str:
+        """Truncate text to max visible chars, preserving IRC formatting codes."""
+        visible = 0
+        i = 0
+        while i < len(text):
+            ch = text[i]
+            if ch == '\x03':
+                i += 1
+                while i < len(text) and text[i].isdigit():
+                    i += 1
+                if i < len(text) and text[i] == ',':
+                    i += 1
+                    while i < len(text) and text[i].isdigit():
+                        i += 1
+            elif ch in '\x02\x1D\x1F\x0F':
+                i += 1
+            else:
+                visible += 1
+                if visible >= max_visible:
+                    return text[:i + 1]
+                i += 1
+        return text
+
     def _header(self, text: str) -> str:
         """Enhanced header with box drawing."""
         visible_len = len(self._strip_irc_colors(text))
@@ -350,9 +373,8 @@ class IRCBot:
         visible_len = len(self._strip_irc_colors(text))
 
         if visible_len > max_content_width:
-            # Truncate if too long
-            text = self._strip_irc_colors(text)[:max_content_width - 3] + "..."
-            visible_len = len(text)
+            text = self._truncate_visible(text, max_content_width - 3) + f"{R}..."
+            visible_len = len(self._strip_irc_colors(text))
 
         padding_needed = max_content_width - visible_len
         spaces = " " * padding_needed
@@ -364,9 +386,8 @@ class IRCBot:
         visible_len = len(self._strip_irc_colors(text))
 
         if visible_len > max_content_width:
-            # Truncate if too long
-            text = self._strip_irc_colors(text)[:max_content_width - 3] + "..."
-            visible_len = len(text)
+            text = self._truncate_visible(text, max_content_width - 3) + f"{R}..."
+            visible_len = len(self._strip_irc_colors(text))
 
         padding_needed = max_content_width - visible_len
         spaces = " " * padding_needed
