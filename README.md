@@ -42,7 +42,9 @@ A Python IRC bot with weather, utilities, fun commands, and text tools. ASCII-st
 - Exponent cap to prevent resource exhaustion
 
 ### Technical
-- SSL/TLS support
+- SSL/TLS support with optional certificate verification bypass
+- SASL PLAIN and NickServ authentication
+- Multi-network support via separate config files
 - Temperature-based color coding
 - ASCII-styled output (no emoji dependencies)
 - Anti-flood protection between multi-line messages
@@ -58,25 +60,36 @@ pip install -r requirements.txt
 
 ## Configuration
 
-Edit the bot configuration at the bottom of `le0.py`:
+Settings live in `config.py` (default) or any alternate config file passed as a CLI argument.
 
 ```python
-bot = IRCBot(
-    server="irc.blcknd.network",
-    port=6697,
-    nickname="le0",
-    channels=["#d0mer"],
-    use_ssl=True,
-    password=None,
-    command_prefix="%"
-)
+# Connection
+SERVER = "irc.blcknd.network"
+PORT = 6697                     # 6697 for SSL, 6667 for non-SSL
+NICKNAME = "le0"
+CHANNELS = ["#d0m3r", "#blcknd"]
+COMMAND_PREFIX = "%"
+
+# SSL / Auth
+USE_SSL = True
+VERIFY_SSL = True               # False to allow self-signed/unverified certs
+PASSWORD = None                 # Server password (if needed)
+NICKSERV_PASS = None            # NickServ identify password (if needed)
+SASL_USERNAME = None            # SASL plain username (if needed)
+SASL_PASSWORD = None            # SASL plain password (if needed)
 ```
 
 ## Usage
 
 ```bash
+# Default (uses config.py)
 python3 le0.py
+
+# Alternate config (e.g. config.efnet.py)
+python3 le0.py config.efnet
 ```
+
+Multiple config files can coexist for different networks (e.g. `config.efnet.py`, `config.libera.py`).
 
 ## Commands
 
