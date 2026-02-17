@@ -9,6 +9,7 @@ COMMAND_PREFIX = "%"
 
 # SSL / Auth
 USE_SSL = True
+VERIFY_SSL = True               # False to allow self-signed/unverified certs
 PASSWORD = None                 # Server password (if needed)
 NICKSERV_PASS = None            # NickServ identify password (if needed)
 SASL_USERNAME = None            # SASL plain username (if needed)

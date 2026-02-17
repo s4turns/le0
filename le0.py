@@ -174,6 +174,7 @@ class IRCBot:
     def __init__(self, server: str, port: int, nickname: str, channels: list,
                  use_ssl: bool = False, password: Optional[str] = None,
                  command_prefix: str = "%",
+                 verify_ssl: bool = True,
                  nickserv_pass: Optional[str] = None,
                  sasl_username: Optional[str] = None,
                  sasl_password: Optional[str] = None):
@@ -182,6 +183,7 @@ class IRCBot:
         self.nickname = nickname
         self.channels = channels
         self.use_ssl = use_ssl
+        self.verify_ssl = verify_ssl
         self.password = password
         self.command_prefix = command_prefix
         self.nickserv_pass = nickserv_pass
@@ -491,7 +493,12 @@ class IRCBot:
         print(f"Connecting to {self.server}:{self.port}...")
 
         if self.use_ssl:
-            context = ssl.create_default_context()
+            if self.verify_ssl:
+                context = ssl.create_default_context()
+            else:
+                context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+                context.check_hostname = False
+                context.verify_mode = ssl.CERT_NONE
             self.irc = context.wrap_socket(self.irc, server_hostname=self.server)
 
         self.irc.connect((self.server, self.port))
@@ -1413,6 +1420,7 @@ if __name__ == "__main__":
         nickname=config.NICKNAME,
         channels=config.CHANNELS,
         use_ssl=config.USE_SSL,
+        verify_ssl=config.VERIFY_SSL,
         password=config.PASSWORD,
         command_prefix=config.COMMAND_PREFIX,
         nickserv_pass=config.NICKSERV_PASS,
