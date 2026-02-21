@@ -308,8 +308,12 @@ class IRCBot:
         return text
 
     def _header(self, text: str) -> str:
-        """Header with top bracket rule."""
+        """Header rule, always exactly BOX_WIDTH visible chars."""
+        max_title = self.BOX_WIDTH - 4  # at least 1 dash + space each side
         visible_len = len(self._strip_irc_colors(text))
+        if visible_len > max_title:
+            text = self._truncate_visible(text, max_title - 3) + f"{R}..."
+            visible_len = len(self._strip_irc_colors(text))
         padding = self.BOX_WIDTH - visible_len - 2
         left_pad = padding // 2
         right_pad = padding - left_pad
