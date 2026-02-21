@@ -308,16 +308,19 @@ class IRCBot:
         return text
 
     def _header(self, text: str) -> str:
-        """Header rule, always exactly BOX_WIDTH visible chars."""
+        """Header rule, always exactly BOX_WIDTH visible chars.
+
+        Strips inline formatting from the title so the entire line uses a
+        single consistent weight — prevents bold-width variation across fonts.
+        """
+        clean = self._strip_irc_colors(text)
         max_title = self.BOX_WIDTH - 4  # at least 1 dash + space each side
-        visible_len = len(self._strip_irc_colors(text))
-        if visible_len > max_title:
-            text = self._truncate_visible(text, max_title - 3) + f"{R}..."
-            visible_len = len(self._strip_irc_colors(text))
-        padding = self.BOX_WIDTH - visible_len - 2
+        if len(clean) > max_title:
+            clean = clean[:max_title - 3] + '...'
+        padding = self.BOX_WIDTH - len(clean) - 2
         left_pad = padding // 2
         right_pad = padding - left_pad
-        return f"{B}{COLOR_PRIMARY}{'-'*left_pad} {text} {'-'*right_pad}{R}"
+        return f"{COLOR_PRIMARY}{'-'*left_pad} {B}{COLOR_ACCENT}{clean}{R}{COLOR_PRIMARY} {'-'*right_pad}{R}"
 
     def _footer(self, text: str = "") -> str:
         """Footer with bottom bracket rule."""
