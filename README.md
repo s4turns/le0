@@ -114,7 +114,7 @@ INFO
 
 FUN
   %coin  or  %flip                            Flip a coin
-  %roll [XdY]  or  %dice [XdY]               Roll dice (default: 1d6)
+  %roll [XdY]  or  %dice [XdY]                Roll dice (default: 1d6)
   %8ball <question>  or  %8 <question>        Magic 8-ball
   %rps <rock|paper|scissors>                  Rock Paper Scissors
   %fact                                       Random fun fact
