@@ -1380,13 +1380,14 @@ class IRCBot:
                 self._header(f"le0 Bot Commands {BOX_SEP} Help Menu"),
                 f" {B}{C.CYAN}[Weather]{R}  {COLOR_ACCENT}{p}weather/w <loc>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}forecast/f <loc>{R}",
                 f" {B}{C.YELLOW}[Info]{R}     {COLOR_ACCENT}{p}urban/ud <term>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}time [loc]{R}",
-                f" {B}{C.CYAN}[Fun]{R}      {COLOR_ACCENT}{p}coin/flip{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}roll/dice [XdY]{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}8ball/8 <q>{R}",
-                f"             {COLOR_ACCENT}{p}rps <r/p/s>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}fact{R}",
+                f" {B}{C.CYAN}[Fun]{R}      {COLOR_ACCENT}{p}coin/flip{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}roll/dice [XdY]{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}8ball/8 <q>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}rps <r/p/s>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}fact{R}",
                 f" {B}{C.YELLOW}[Social]{R}   {COLOR_ACCENT}{p}quote{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}addquote <text>{R}",
                 f" {B}{C.LIGHT_GREEN}[Utility]{R}  {COLOR_ACCENT}{p}seen <nick>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}ping{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}uptime{R}",
                 f" {B}{C.ORANGE}[Tools]{R}    {COLOR_ACCENT}{p}calc <expr>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}hash <text>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}base64/b64 <e/d>{R}",
                 f" {B}{C.LIGHT_BLUE}[Text]{R}     {COLOR_ACCENT}{p}reverse <text>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}mock <text>{R}",
             ]
+            if self._is_admin(hostmask):
+                lines.append(f" {B}{C.RED}[Admin]{R}    {COLOR_ACCENT}{p}join{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}part{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}quit{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}say{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}nick{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}kick{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}raw{R}")
             for line in lines:
                 self.send_message(channel, line)
                 time.sleep(0.3)
