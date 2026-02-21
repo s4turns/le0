@@ -296,24 +296,22 @@ class IRCBot:
         return text
 
     def _header(self, text: str) -> str:
-        """Enhanced header with box drawing."""
+        """Header with top bracket rule."""
         visible_len = len(self._strip_irc_colors(text))
-        # Total width = 1(╔) + padding + 1(space) + text + 1(space) + padding + 1(╗) = BOX_WIDTH
-        # So: padding_total = BOX_WIDTH - text - 4
-        padding = self.BOX_WIDTH - visible_len - 4
+        padding = self.BOX_WIDTH - visible_len - 2
         left_pad = padding // 2
         right_pad = padding - left_pad
-        return f"{B}{COLOR_PRIMARY}{BOX_TL}{BOX_H*left_pad} {text} {BOX_H*right_pad}{BOX_TR}{R}"
+        return f"{B}{COLOR_PRIMARY}{DIVIDER*left_pad} {text} {DIVIDER*right_pad}{R}"
 
     def _footer(self, text: str = "") -> str:
-        """Footer to close boxes."""
+        """Footer with bottom bracket rule."""
         if text:
             visible_len = len(self._strip_irc_colors(text))
-            padding = self.BOX_WIDTH - visible_len - 4
+            padding = self.BOX_WIDTH - visible_len - 2
             left_pad = padding // 2
             right_pad = padding - left_pad
-            return f"{B}{COLOR_PRIMARY}{BOX_BL}{BOX_H*left_pad} {text} {BOX_H*right_pad}{BOX_BR}{R}"
-        return f"{B}{COLOR_PRIMARY}{BOX_BL}{BOX_H*(self.BOX_WIDTH-2)}{BOX_BR}{R}"
+            return f"{B}{COLOR_PRIMARY}{DIVIDER*left_pad} {text} {DIVIDER*right_pad}{R}"
+        return f"{B}{COLOR_PRIMARY}{DIVIDER*self.BOX_WIDTH}{R}"
 
     def _error(self, text: str) -> str:
         """Error message with icon."""
@@ -379,30 +377,24 @@ class IRCBot:
         return lines if lines else [""]
 
     def _arrow_line(self, text: str) -> str:
-        """Arrow-prefixed line with box sides."""
-        max_content_width = self.BOX_WIDTH - 6  # 6 for "║ > text ║"
+        """Arrow-prefixed line."""
+        max_content_width = self.BOX_WIDTH - 4  # 4 for " >  "
         visible_len = len(self._strip_irc_colors(text))
 
         if visible_len > max_content_width:
             text = self._truncate_visible(text, max_content_width - 3) + f"{R}..."
-            visible_len = len(self._strip_irc_colors(text))
 
-        padding_needed = max_content_width - visible_len
-        spaces = " " * padding_needed
-        return f"{B}{COLOR_PRIMARY}{BOX_V}{R} {B}{COLOR_ACCENT}{ARROW}{R} {text}{spaces} {B}{COLOR_PRIMARY}{BOX_V}{R}"
+        return f" {B}{COLOR_ACCENT}{ARROW}{R} {text}"
 
     def _box_line(self, text: str) -> str:
-        """Plain line with box sides (no arrow)."""
-        max_content_width = self.BOX_WIDTH - 4  # 4 for "║  ║"
+        """Plain line (no arrow, no sides)."""
+        max_content_width = self.BOX_WIDTH - 2
         visible_len = len(self._strip_irc_colors(text))
 
         if visible_len > max_content_width:
             text = self._truncate_visible(text, max_content_width - 3) + f"{R}..."
-            visible_len = len(self._strip_irc_colors(text))
 
-        padding_needed = max_content_width - visible_len
-        spaces = " " * padding_needed
-        return f"{B}{COLOR_PRIMARY}{BOX_V}{R} {text}{spaces} {B}{COLOR_PRIMARY}{BOX_V}{R}"
+        return f" {text}"
 
     def _label(self, text: str) -> str:
         """Colored label for field names."""
