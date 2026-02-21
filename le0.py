@@ -14,6 +14,7 @@ import urllib.parse
 import os
 import sys
 import importlib
+import fnmatch
 import requests
 from typing import Optional
 
@@ -179,7 +180,8 @@ class IRCBot:
                  verify_ssl: bool = True,
                  nickserv_pass: Optional[str] = None,
                  sasl_username: Optional[str] = None,
-                 sasl_password: Optional[str] = None):
+                 sasl_password: Optional[str] = None,
+                 admins: list = None):
         self.server = server
         self.port = port
         self.nickname = nickname
@@ -191,6 +193,7 @@ class IRCBot:
         self.nickserv_pass = nickserv_pass
         self.sasl_username = sasl_username
         self.sasl_password = sasl_password
+        self.admins = admins or []
         self.irc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.start_time = time.time()
 
@@ -479,6 +482,10 @@ class IRCBot:
             return False
         self.user_last_cmd[nick.lower()] = now
         return True
+
+    def _is_admin(self, hostmask: str) -> bool:
+        """Check if a hostmask matches any configured admin pattern."""
+        return any(fnmatch.fnmatch(hostmask.lower(), p.lower()) for p in self.admins)
 
     # ─── Connection ───────────────────────────────────────────────
 
@@ -1100,17 +1107,77 @@ class IRCBot:
 
     # ─── Command Handler ──────────────────────────────────────────
 
-    def handle_command(self, channel: str, nick: str, message: str):
+    def handle_command(self, channel: str, nick: str, hostmask: str, message: str):
         """Handle bot commands."""
-        if not self._check_rate_limit(nick):
-            return
-
         parts = message.strip().split()
         if not parts:
             return
 
         command = parts[0].lower()
         p = self.command_prefix
+
+        # ── Admin (bypasses rate limit) ──
+        if self._is_admin(hostmask):
+            if command == f"{p}join":
+                if len(parts) < 2:
+                    self.send_message(channel, self._error(f"Usage: {p}join <channel>"))
+                    return
+                target = Sanitizer.sanitize_irc_output(parts[1])
+                self.send_raw(f"JOIN {target}")
+                return
+
+            elif command == f"{p}part":
+                target = Sanitizer.sanitize_irc_output(parts[1]) if len(parts) > 1 else channel
+                self.send_raw(f"PART {target}")
+                return
+
+            elif command == f"{p}quit":
+                msg = Sanitizer.sanitize_irc_output(" ".join(parts[1:])) if len(parts) > 1 else "bye"
+                self.send_raw(f"QUIT :{msg}")
+                return
+
+            elif command == f"{p}say":
+                if len(parts) < 3:
+                    self.send_message(channel, self._error(f"Usage: {p}say <channel> <message>"))
+                    return
+                target = Sanitizer.sanitize_irc_output(parts[1])
+                msg = Sanitizer.sanitize_irc_output(" ".join(parts[2:]))
+                self.send_message(target, msg)
+                return
+
+            elif command == f"{p}nick":
+                if len(parts) < 2:
+                    self.send_message(channel, self._error(f"Usage: {p}nick <newnick>"))
+                    return
+                new_nick = Sanitizer.sanitize_nick(parts[1])
+                if not new_nick:
+                    self.send_message(channel, self._error("Invalid nickname"))
+                    return
+                self.send_raw(f"NICK {new_nick}")
+                return
+
+            elif command == f"{p}kick":
+                if len(parts) < 2:
+                    self.send_message(channel, self._error(f"Usage: {p}kick <nick> [reason]"))
+                    return
+                target_nick = Sanitizer.sanitize_nick(parts[1])
+                if not target_nick:
+                    self.send_message(channel, self._error("Invalid nickname"))
+                    return
+                reason = Sanitizer.sanitize_irc_output(" ".join(parts[2:])) if len(parts) > 2 else "."
+                self.send_raw(f"KICK {channel} {target_nick} :{reason}")
+                return
+
+            elif command == f"{p}raw":
+                if len(parts) < 2:
+                    self.send_message(channel, self._error(f"Usage: {p}raw <command>"))
+                    return
+                raw_cmd = Sanitizer.sanitize_irc_output(" ".join(parts[1:]))
+                self.send_raw(raw_cmd)
+                return
+
+        if not self._check_rate_limit(nick):
+            return
 
         # ── Weather ──
         if command in (f"{p}weather", f"{p}w"):
@@ -1378,12 +1445,14 @@ class IRCBot:
                         continue
 
                     # Parse messages: :nick!user@host PRIVMSG #channel :message
-                    match = re.match(r':(.+?)!.+? PRIVMSG (.+?) :(.+)', line)
+                    match = re.match(r':(.+?)!(.+?) PRIVMSG (.+?) :(.+)', line)
 
                     if match:
                         nick = match.group(1)
-                        channel = match.group(2)
-                        message = match.group(3)
+                        userhost = match.group(2)
+                        channel = match.group(3)
+                        message = match.group(4)
+                        hostmask = f"{nick}!{userhost}"
 
                         if nick == self.nickname:
                             continue
@@ -1391,7 +1460,7 @@ class IRCBot:
                         self.track_seen(nick, channel, message)
 
                         if message.startswith(self.command_prefix):
-                            self.handle_command(channel, nick, message)
+                            self.handle_command(channel, nick, hostmask, message)
 
             except KeyboardInterrupt:
                 print("\nShutting down...")
@@ -1425,6 +1494,7 @@ if __name__ == "__main__":
         nickserv_pass=config.NICKSERV_PASS,
         sasl_username=config.SASL_USERNAME,
         sasl_password=config.SASL_PASSWORD,
+        admins=getattr(config, 'ADMINS', []),
     )
 
     # Enhanced startup banner

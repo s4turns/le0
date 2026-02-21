@@ -7,6 +7,10 @@ NICKNAME = "le0"
 CHANNELS = ["#d0m3r", "#blcknd"]
 COMMAND_PREFIX = "%"
 
+# Admin hostmasks (nick!user@host format, wildcards supported)
+# Examples: "*!*@myhost.isp.net"  "*!*@*.myisp.net"  "mynick!*@*"
+ADMINS = []
+
 # SSL / Auth
 USE_SSL = True
 VERIFY_SSL = True               # False to allow self-signed/unverified certs
