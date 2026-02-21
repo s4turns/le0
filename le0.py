@@ -301,7 +301,7 @@ class IRCBot:
         padding = self.BOX_WIDTH - visible_len - 2
         left_pad = padding // 2
         right_pad = padding - left_pad
-        return f"{B}{COLOR_PRIMARY}{DIVIDER*left_pad} {text} {DIVIDER*right_pad}{R}"
+        return f"{B}{COLOR_PRIMARY}{'-'*left_pad} {text} {'-'*right_pad}{R}"
 
     def _footer(self, text: str = "") -> str:
         """Footer with bottom bracket rule."""
@@ -310,8 +310,8 @@ class IRCBot:
             padding = self.BOX_WIDTH - visible_len - 2
             left_pad = padding // 2
             right_pad = padding - left_pad
-            return f"{B}{COLOR_PRIMARY}{DIVIDER*left_pad} {text} {DIVIDER*right_pad}{R}"
-        return f"{B}{COLOR_PRIMARY}{DIVIDER*self.BOX_WIDTH}{R}"
+            return f"{B}{COLOR_PRIMARY}{'-'*left_pad} {text} {'-'*right_pad}{R}"
+        return f"{B}{COLOR_PRIMARY}{'-'*self.BOX_WIDTH}{R}"
 
     def _error(self, text: str) -> str:
         """Error message with icon."""
