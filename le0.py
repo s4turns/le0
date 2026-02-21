@@ -15,6 +15,7 @@ import os
 import sys
 import importlib
 import fnmatch
+import json
 import requests
 from typing import Optional
 
@@ -209,11 +210,19 @@ class IRCBot:
             "&temperature_unit=celsius&wind_speed_unit=kmh&forecast_days=3&timezone=auto"
         )
 
+        # Persistent data files (same directory as script)
+        _base = os.path.dirname(os.path.abspath(__file__))
+        self.quotes_file = os.path.join(_base, 'quotes.json')
+        self.seen_file = os.path.join(_base, 'seen.json')
+        self._last_seen_save = 0
+
         # Track last seen users
         self.seen_users = {}
 
         # Quote database
         self.quotes = []
+
+        self._load_data()
 
         # 8ball responses
         self.eightball_responses = [
@@ -471,6 +480,48 @@ class IRCBot:
             return IRCColors.LIGHT_BLUE  # Moderate rain
         else:
             return IRCColors.BLUE        # Heavy rain
+
+    # ─── Persistence ──────────────────────────────────────────────
+
+    def _load_data(self):
+        """Load quotes and seen data from JSON files on startup."""
+        try:
+            if os.path.exists(self.quotes_file):
+                with open(self.quotes_file, 'r') as f:
+                    self.quotes = json.load(f)
+                print(f"Loaded {len(self.quotes)} quotes from {self.quotes_file}")
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"Warning: could not load quotes: {e}")
+            self.quotes = []
+
+        try:
+            if os.path.exists(self.seen_file):
+                with open(self.seen_file, 'r') as f:
+                    self.seen_users = json.load(f)
+                print(f"Loaded {len(self.seen_users)} seen users from {self.seen_file}")
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"Warning: could not load seen data: {e}")
+            self.seen_users = {}
+
+    def _save_quotes(self):
+        """Save quotes to JSON file."""
+        try:
+            with open(self.quotes_file, 'w') as f:
+                json.dump(self.quotes, f, indent=2)
+        except IOError as e:
+            print(f"Warning: could not save quotes: {e}")
+
+    def _save_seen(self):
+        """Save seen data to JSON, at most once per 60 seconds."""
+        now = time.time()
+        if now - self._last_seen_save < 60:
+            return
+        self._last_seen_save = now
+        try:
+            with open(self.seen_file, 'w') as f:
+                json.dump(self.seen_users, f, indent=2)
+        except IOError as e:
+            print(f"Warning: could not save seen data: {e}")
 
     # ─── Rate limiting ────────────────────────────────────────────
 
@@ -941,6 +992,7 @@ class IRCBot:
             'message': message[:100],
             'time': time.time()
         }
+        self._save_seen()
 
     def get_seen(self, nick: str) -> str:
         """Get when a user was last seen."""
@@ -980,6 +1032,7 @@ class IRCBot:
             'added_by': added_by,
             'timestamp': time.time()
         })
+        self._save_quotes()
         quote_num = len(self.quotes)
         return self._success(f"Quote {B}{C.YELLOW}#{quote_num}{R} added by {B}{C.CYAN}{added_by}{R}")
 
