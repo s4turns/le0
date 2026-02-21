@@ -33,6 +33,12 @@ A Python IRC bot with weather, utilities, fun commands, and text tools. ASCII-st
 - Text reversal
 - Mocking case (SpOnGeBoB)
 
+### Admin
+- Hostmask-based authentication (`nick!user@host` with wildcard support)
+- Admin commands bypass rate limiting
+- `%join`, `%part`, `%quit`, `%say`, `%nick`, `%kick`, `%raw`
+- Admin section only visible in `%help` to authenticated admins
+
 ### Security
 - Input sanitization on all commands (CRLF injection, IRC control chars, length limits)
 - URL parameter encoding on all API calls
@@ -42,7 +48,7 @@ A Python IRC bot with weather, utilities, fun commands, and text tools. ASCII-st
 - Exponent cap to prevent resource exhaustion
 
 ### Technical
-- SSL/TLS support with optional certificate verification bypass
+- SSL/TLS support with TLS 1.2 minimum, optional certificate verification bypass
 - SASL PLAIN and NickServ authentication
 - Multi-network support via separate config files
 - Temperature-based color coding
@@ -64,11 +70,15 @@ Settings live in `config.py` (default) or any alternate config file passed as a 
 
 ```python
 # Connection
-SERVER = "irc.blcknd.network"
+SERVER = "irc.example.net"
 PORT = 6697                     # 6697 for SSL, 6667 for non-SSL
 NICKNAME = "le0"
-CHANNELS = ["#d0m3r", "#blcknd"]
+CHANNELS = ["#channel"]
 COMMAND_PREFIX = "%"
+
+# Admin hostmasks (nick!user@host format, wildcards supported)
+# Examples: "*!*@*.myisp.net"  "mynick!*@*"
+ADMINS = ["*!*@*.example.net"]
 
 # SSL / Auth
 USE_SSL = True
@@ -125,6 +135,15 @@ TOOLS
   %reverse <text>                             Reverse text
   %mock <text>                                SpOnGeBoB mOcKiNg CaSe
 
+ADMIN  (hostmask-authenticated only)
+  %join <channel>                             Join a channel
+  %part [channel]                             Leave a channel (defaults to current)
+  %quit [message]                             Disconnect the bot
+  %say <channel> <message>                    Speak in any channel
+  %nick <newnick>                             Change the bot's nick
+  %kick <nick> [reason]                       Kick a user from the current channel
+  %raw <command>                              Send a raw IRC command
+
 HELP
   %help                                       Show all commands in IRC
 ```
@@ -133,19 +152,23 @@ HELP
 
 ```
 <user> %weather London
-<le0> [-- Weather :: London, United Kingdom --]
-<le0>  >> Cond: Partly cloudy  Temp: 12C/54F  Feels: 10C/50F
-<le0>  >> Humid: 76%  Wind: 15km/h W  Cloud: 65%
-<le0>  >> Press: 1013hPa  Vis: 10km  Rise: 07:45  Set: 16:30
+<le0> ----------- Weather | London, United Kingdom -----------
+<le0>  > Condition: Partly cloudy  Temp: 12°C / 54°F  Feels: 10°C / 50°F
+<le0>  > Humidity: 76%  Wind: 15km/h W  Clouds: 65%
+<le0>  > Pressure: 1013hPa  Visibility: 10km  Sunrise: 07:45  Sunset: 16:30
 
 <user> %roll 2d6
-<le0> [-- Dice --] 2d6 >> [4, 5] = 9
+<le0> ----------- Dice Roll -----------
+<le0>  > 2d6 > [4, 5] = 9
 
 <user> %calc 2^10
-<le0> [-- Calc --] 2**10 = 1024
+<le0> ----------- Calculator -----------
+<le0>  > 2**10 = 1024
 
 <user> %rps rock
-<le0> [-- Rock Paper Scissors --] ROCK vs SCISSORS >> YOU WIN
+<le0> ----------- Rock Paper Scissors -----------
+<le0>  > You: ROCK vs Bot: SCISSORS
+<le0>  > Result: YOU WIN
 ```
 
 Actual output includes IRC color codes for a much prettier display.
