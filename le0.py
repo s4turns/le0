@@ -259,7 +259,7 @@ class IRCBot:
 
     # ─── Enhanced formatting helpers ───────────────────────────────
 
-    BOX_WIDTH = 100  # Fixed width for all boxes
+    BOX_WIDTH = 90  # Fixed width for all boxes
 
     def _strip_irc_colors(self, text: str) -> str:
         """Strip IRC color codes to measure visible text length."""
@@ -650,9 +650,7 @@ class IRCBot:
                 f"{self._label('Sunrise')}: {B}{C.YELLOW}{sunrise}{R}  "
                 f"{self._label('Sunset')}: {B}{C.ORANGE}{sunset}{R}"
             )
-            footer = self._footer()
-
-            return f"{line1}\n{line2}\n{line3}\n{line4}\n{footer}"
+            return f"{line1}\n{line2}\n{line3}\n{line4}"
 
         except requests.exceptions.Timeout:
             return self._error("Request timed out - weather service may be unavailable")
@@ -725,7 +723,6 @@ class IRCBot:
                 )
                 forecasts.append(forecast_msg)
 
-            forecasts.append(self._footer())
             return forecasts
 
         except requests.exceptions.Timeout:
@@ -749,12 +746,12 @@ class IRCBot:
                     geo_data = geo_response.json()
                     if geo_data.get('results'):
                         current_time = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
-                        return f"{self._header('Time')}\n{self._arrow_line(f'{B}{C.YELLOW}{current_time}{R}')}\n{self._footer()}"
+                        return f"{self._header('Time')}\n{self._arrow_line(f'{B}{C.YELLOW}{current_time}{R}')}"
 
                 return self._error(f"Could not find location '{location}'")
             else:
                 current_time = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
-                return f"{self._header('Time')}\n{self._arrow_line(f'{B}{C.YELLOW}{current_time}{R}')}\n{self._footer()}"
+                return f"{self._header('Time')}\n{self._arrow_line(f'{B}{C.YELLOW}{current_time}{R}')}"
 
         except Exception:
             return self._error("Error getting time")
@@ -800,7 +797,6 @@ class IRCBot:
                     for line in lines[:5]:  # Max 5 lines of definition
                         output += f"{self._arrow_line(f'{COLOR_ACCENT}{line}{R}')}\n"
 
-                    output += self._footer()
                     return output
                 else:
                     return self._error(f"No definition found for '{term}'")
@@ -830,7 +826,7 @@ class IRCBot:
             f"{self._box_line(line4)}"
         )
         result_text = f"{B}{coin_color}{result}{R}"
-        return f"{self._header('Coin Flip')}\n{art}\n{self._arrow_line(f'{STAR} {result_text}')}\n{self._footer()}"
+        return f"{self._header('Coin Flip')}\n{art}\n{self._arrow_line(f'{STAR} {result_text}')}"
 
     def roll_dice(self, dice_str: str = "1d6") -> str:
         """Roll dice (e.g., 2d6, 1d20)."""
@@ -854,10 +850,10 @@ class IRCBot:
             total_text = f"{B}{C.YELLOW}{total}{R}"
 
             if num == 1:
-                return f"{self._header('Dice Roll')}\n{self._arrow_line(f'{dice_text} {B}{COLOR_PRIMARY}>{R} {total_text}')}\n{self._footer()}"
+                return f"{self._header('Dice Roll')}\n{self._arrow_line(f'{dice_text} {B}{COLOR_PRIMARY}>{R} {total_text}')}"
             else:
                 rolls_text = f"{COLOR_ACCENT}{rolls}{R}"
-                return f"{self._header('Dice Roll')}\n{self._arrow_line(f'{dice_text} {B}{COLOR_PRIMARY}>{R} {rolls_text} {COLOR_PRIMARY}={R} {total_text}')}\n{self._footer()}"
+                return f"{self._header('Dice Roll')}\n{self._arrow_line(f'{dice_text} {B}{COLOR_PRIMARY}>{R} {rolls_text} {COLOR_PRIMARY}={R} {total_text}')}"
 
         except (ValueError, OverflowError):
             return self._error("Invalid dice format (use: 2d6, 1d20)")
@@ -886,7 +882,7 @@ class IRCBot:
             f"{self._box_line(line2)}\n"
             f"{self._box_line(line3)}"
         )
-        return f"{self._header('Magic 8-Ball')}\n{ball}\n{self._arrow_line(f'{B}{resp_color}{response}{R}')}\n{self._footer()}"
+        return f"{self._header('Magic 8-Ball')}\n{ball}\n{self._arrow_line(f'{B}{resp_color}{response}{R}')}"
 
     def rps(self, choice: str) -> str:
         """Rock Paper Scissors."""
@@ -920,14 +916,13 @@ class IRCBot:
         return (
             f"{self._header('Rock Paper Scissors')}\n"
             f"{self._arrow_line(f'You: {you_text} vs Bot: {bot_text}')}\n"
-            f"{self._arrow_line(f'Result: {result_text}')}\n"
-            f"{self._footer()}"
+            f"{self._arrow_line(f'Result: {result_text}')}"
         )
 
     def get_fact(self) -> str:
         """Get a random fun fact."""
         fact = random.choice(self.facts)
-        return f"{self._header('Random Fact')}\n{self._arrow_line(f'{STAR} {COLOR_ACCENT}{fact}{R}')}\n{self._footer()}"
+        return f"{self._header('Random Fact')}\n{self._arrow_line(f'{STAR} {COLOR_ACCENT}{fact}{R}')}"
 
     # ─── Utility Commands ─────────────────────────────────────────
 
@@ -1016,12 +1011,12 @@ class IRCBot:
         parts.append(f"{seconds}s")
 
         uptime_str = " ".join(parts)
-        return f"{self._header('Bot Uptime')}\n{self._arrow_line(f'{B}{COLOR_SUCCESS}{uptime_str}{R}')}\n{self._footer()}"
+        return f"{self._header('Bot Uptime')}\n{self._arrow_line(f'{B}{COLOR_SUCCESS}{uptime_str}{R}')}"
 
     def do_ping(self) -> str:
         """Return a pong with timestamp."""
         ts = time.strftime("%H:%M:%S", time.gmtime())
-        return f"{self._header('Pong')}\n{self._arrow_line(f'{B}{COLOR_SUCCESS}PONG!{R} {COLOR_ACCENT}{DOT}{R} {C.YELLOW}{ts}{R}')}\n{self._footer()}"
+        return f"{self._header('Pong')}\n{self._arrow_line(f'{B}{COLOR_SUCCESS}PONG!{R} {COLOR_ACCENT}{DOT}{R} {C.YELLOW}{ts}{R}')}"
 
     def hash_text(self, text: str) -> str:
         """Hash text with multiple algorithms."""
@@ -1047,11 +1042,11 @@ class IRCBot:
         try:
             if mode in ('e', 'encode', 'enc'):
                 result = base64.b64encode(text.encode()).decode()
-                return f"{self._header('Base64 Encode')}\n{self._arrow_line(f'{COLOR_ACCENT}{result}{R}')}\n{self._footer()}"
+                return f"{self._header('Base64 Encode')}\n{self._arrow_line(f'{COLOR_ACCENT}{result}{R}')}"
             elif mode in ('d', 'decode', 'dec'):
                 result = base64.b64decode(text.encode()).decode('utf-8', errors='replace')
                 result = Sanitizer.strip_irc_controls(result)[:300]
-                return f"{self._header('Base64 Decode')}\n{self._arrow_line(f'{COLOR_ACCENT}{result}{R}')}\n{self._footer()}"
+                return f"{self._header('Base64 Decode')}\n{self._arrow_line(f'{COLOR_ACCENT}{result}{R}')}"
             else:
                 return self._error("Usage: %base64 <encode|decode> <text>")
         except Exception:
@@ -1060,7 +1055,7 @@ class IRCBot:
     def reverse_text(self, text: str) -> str:
         """Reverse a string."""
         reversed_text = text[::-1]
-        return f"{self._header('Reverse Text')}\n{self._arrow_line(f'{COLOR_ACCENT}{reversed_text}{R}')}\n{self._footer()}"
+        return f"{self._header('Reverse Text')}\n{self._arrow_line(f'{COLOR_ACCENT}{reversed_text}{R}')}"
 
     def mock_text(self, text: str) -> str:
         """SpOnGeBoB mOcKiNg CaSe."""
@@ -1068,7 +1063,7 @@ class IRCBot:
             c.upper() if i % 2 == 0 else c.lower()
             for i, c in enumerate(text)
         )
-        return f"{self._header('Mock Text')}\n{self._arrow_line(f'{C.YELLOW}{result}{R}')}\n{self._footer()}"
+        return f"{self._header('Mock Text')}\n{self._arrow_line(f'{C.YELLOW}{result}{R}')}"
 
     def safe_calc(self, expr: str) -> str:
         """Safely evaluate a math expression."""
@@ -1097,7 +1092,7 @@ class IRCBot:
 
             expr_text = f"{COLOR_ACCENT}{expr}{R}"
             result_text = f"{B}{C.YELLOW}{result}{R}"
-            return f"{self._header('Calculator')}\n{self._arrow_line(f'{expr_text} {COLOR_PRIMARY}={R} {result_text}')}\n{self._footer()}"
+            return f"{self._header('Calculator')}\n{self._arrow_line(f'{expr_text} {COLOR_PRIMARY}={R} {result_text}')}"
         except ZeroDivisionError:
             return self._error("Division by zero")
         except Exception:
@@ -1324,7 +1319,6 @@ class IRCBot:
                 f" {B}{C.LIGHT_GREEN}[Utility]{R}  {COLOR_ACCENT}{p}seen <nick>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}ping{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}uptime{R}",
                 f" {B}{C.ORANGE}[Tools]{R}    {COLOR_ACCENT}{p}calc <expr>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}hash <text>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}base64/b64 <e/d>{R}",
                 f" {B}{C.LIGHT_BLUE}[Text]{R}     {COLOR_ACCENT}{p}reverse <text>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}mock <text>{R}",
-                self._footer(f"Type {B}{COLOR_ACCENT}{p}help{R} anytime"),
             ]
             for line in lines:
                 self.send_message(channel, line)
