@@ -9,7 +9,7 @@ COMMAND_PREFIX = "%"
 
 # Admin hostmasks (nick!user@host format, wildcards supported)
 # Examples: "*!*@myhost.isp.net"  "*!*@*.myisp.net"  "mynick!*@*"
-ADMINS = []
+ADMINS = ["*!*@.interdo.me"]
 
 # SSL / Auth
 USE_SSL = True
