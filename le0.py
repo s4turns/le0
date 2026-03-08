@@ -308,19 +308,9 @@ class IRCBot:
         return text
 
     def _header(self, text: str) -> str:
-        """Header rule, always exactly BOX_WIDTH visible chars.
-
-        Strips inline formatting from the title so the entire line uses a
-        single consistent weight — prevents bold-width variation across fonts.
-        """
+        """Bold accent title with no surrounding dashes."""
         clean = self._strip_irc_colors(text)
-        max_title = self.BOX_WIDTH - 4  # at least 1 dash + space each side
-        if len(clean) > max_title:
-            clean = clean[:max_title - 3] + '...'
-        padding = self.BOX_WIDTH - len(clean) - 2
-        left_pad = padding // 2
-        right_pad = padding - left_pad
-        return f"{COLOR_PRIMARY}{'-'*left_pad} {B}{COLOR_ACCENT}{clean}{R}{COLOR_PRIMARY} {'-'*right_pad}{R}"
+        return f"{B}{COLOR_ACCENT}{clean}{R}"
 
     def _footer(self, text: str = "") -> str:
         """Footer with bottom bracket rule."""
@@ -1026,8 +1016,7 @@ class IRCBot:
             return (
                 f"{self._header('User Seen')}\n"
                 f"{self._arrow_line(f'{nick_text} {COLOR_PRIMARY}{DIVIDER*2}{R} {time_text} in {channel_text}')}\n"
-                f"{self._arrow_line(f'{msg_label}: {msg_text}')}\n"
-                f"{self._footer()}"
+                f"{self._arrow_line(f'{msg_label}: {msg_text}')}"
             )
         else:
             return self._error(f"Haven't seen {nick} yet")
@@ -1056,8 +1045,7 @@ class IRCBot:
         return (
             f"{self._header(f'Quote {B}{C.YELLOW}#{quote_num}{R}')}\n"
             f"{self._arrow_line(f'{C.YELLOW}{dq}{R}' + quote_text + f'{C.YELLOW}{dq}{R}')}\n"
-            f"{self._arrow_line(f'{COLOR_PRIMARY}{DIVIDER*2}{R} added by {by_text}')}\n"
-            f"{self._footer()}"
+            f"{self._arrow_line(f'{COLOR_PRIMARY}{DIVIDER*2}{R} added by {by_text}')}"
         )
 
     def get_uptime(self) -> str:
@@ -1100,8 +1088,7 @@ class IRCBot:
             f"{self._header('Cryptographic Hash')}\n"
             f"{self._arrow_line(f'{md5_label}:    {C.LIGHT_BLUE}{md5}{R}')}\n"
             f"{self._arrow_line(f'{sha1_label}:   {C.CYAN}{sha1}{R}')}\n"
-            f"{self._arrow_line(f'{sha256_label}: {C.LIGHT_CYAN}{sha256_short}{R}')}\n"
-            f"{self._footer()}"
+            f"{self._arrow_line(f'{sha256_label}: {C.LIGHT_CYAN}{sha256_short}{R}')}"
         )
 
     def do_base64(self, mode: str, text: str) -> str:
