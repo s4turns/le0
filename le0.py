@@ -861,6 +861,36 @@ class IRCBot:
         except Exception:
             return self._error("Error looking up definition")
 
+    def search(self, query: str) -> str:
+        """Search DuckDuckGo Lite (no API key required)."""
+        try:
+            safe_query = Sanitizer.safe_url_param(query)
+            response = requests.get(
+                f"https://lite.duckduckgo.com/lite/?q={safe_query}",
+                headers={"User-Agent": "Mozilla/5.0"},
+                timeout=10
+            )
+            if response.status_code != 200:
+                return self._error(f"Search failed ({response.status_code})")
+
+            # Extract results: titles, URLs, snippets via regex
+            titles   = re.findall(r'class="result-link"[^>]*href="([^"]+)"[^>]*>([^<]+)<', response.text)
+            snippets = re.findall(r'class="result-snippet"[^>]*>\s*(.*?)\s*</td>', response.text, re.DOTALL)
+
+            if not titles:
+                return self._error(f"No results for '{query}'")
+
+            output = f"{self._header(f'Search: {query}')}\n"
+            for i, (url, title) in enumerate(titles[:3]):
+                snip = re.sub(r'\s+', ' ', snippets[i]).strip()[:80] if i < len(snippets) else ""
+                output += f"{self._arrow_line(f'{B}{COLOR_ACCENT}{title.strip()}{R}')}\n"
+                output += f"{self._arrow_line(f'{C.CYAN}{url}{R}')}\n"
+                if snip:
+                    output += f"{self._arrow_line(f'{COLOR_PRIMARY}{snip}{R}')}\n"
+            return output.rstrip()
+        except Exception:
+            return self._error("Error performing search")
+
     # ─── Fun Commands ─────────────────────────────────────────────
 
     def coin_flip(self) -> str:
@@ -1492,12 +1522,26 @@ class IRCBot:
                 self.send_message(channel, line)
                 time.sleep(0.2)
 
+        # ── Google Search ──
+        elif command in (f"{p}search", f"{p}g"):
+            if len(parts) < 2:
+                self.send_message(channel, self._error(f"Usage: {p}google <query>"))
+                return
+            query = Sanitizer.sanitize_generic(" ".join(parts[1:]))
+            if not query:
+                self.send_message(channel, self._error("Invalid query"))
+                return
+            result = self.search(query)
+            for line in result.split('\n'):
+                self.send_message(channel, line)
+                time.sleep(0.2)
+
         # ── Help ──
         elif command == f"{p}help":
             lines = [
                 self._header(f"le0 Bot Commands {BOX_SEP} Help Menu"),
                 f" {B}{C.CYAN}[Weather]{R}  {COLOR_ACCENT}{p}weather/w <loc>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}forecast/f <loc>{R}",
-                f" {B}{C.YELLOW}[Info]{R}     {COLOR_ACCENT}{p}urban/ud <term>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}time [loc]{R}",
+                f" {B}{C.YELLOW}[Info]{R}     {COLOR_ACCENT}{p}urban/ud <term>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}time [loc]{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}search/g <query>{R}",
                 f" {B}{C.CYAN}[Fun]{R}      {COLOR_ACCENT}{p}coin/flip{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}roll/dice [XdY]{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}8ball/8 <q>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}rps <r/p/s>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}fact{R}",
                 f" {B}{C.YELLOW}[Social]{R}   {COLOR_ACCENT}{p}quote{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}addquote <text>{R}",
                 f" {B}{C.LIGHT_GREEN}[Utility]{R}  {COLOR_ACCENT}{p}seen <nick>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}ping{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}uptime{R}",
