@@ -1492,12 +1492,28 @@ class IRCBot:
                 self.send_message(channel, line)
                 time.sleep(0.2)
 
+        # ── HTTP Status ──
+        elif command in (f"{p}http", f"{p}http"):
+            if len(parts) < 2:
+                self.send_message(channel, self._error(f"Usage: {p}http <code>"))
+                return
+            try:
+                code = int(parts[1])
+            except ValueError:
+                self.send_message(channel, self._error("Invalid code — must be a number"))
+                return
+            info = self.http_status_info(code)
+            if info:
+                self.send_message(channel, info)
+            else:
+                self.send_message(channel, self._error(f"Unknown HTTP status code: {code}"))
+
         # ── Help ──
         elif command == f"{p}help":
             lines = [
                 self._header(f"le0 Bot Commands {BOX_SEP} Help Menu"),
                 f" {B}{C.CYAN}[Weather]{R}  {COLOR_ACCENT}{p}weather/w <loc>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}forecast/f <loc>{R}",
-                f" {B}{C.YELLOW}[Info]{R}     {COLOR_ACCENT}{p}urban/ud <term>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}time [loc]{R}",
+                f" {B}{C.YELLOW}[Info]{R}     {COLOR_ACCENT}{p}urban/ud <term>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}time [loc]{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}http <code>{R}",
                 f" {B}{C.CYAN}[Fun]{R}      {COLOR_ACCENT}{p}coin/flip{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}roll/dice [XdY]{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}8ball/8 <q>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}rps <r/p/s>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}fact{R}",
                 f" {B}{C.YELLOW}[Social]{R}   {COLOR_ACCENT}{p}quote{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}addquote <text>{R}",
                 f" {B}{C.LIGHT_GREEN}[Utility]{R}  {COLOR_ACCENT}{p}seen <nick>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}ping{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}uptime{R}",
@@ -1585,14 +1601,6 @@ class IRCBot:
                             time.sleep(delay)
                             action = random.choice(['bang', 'bef'])
                             self.send_message(channel, action)
-
-                        # Auto-reply HTTP status codes with RFC info
-                        http_match = re.search(r'\b([1-5]\d{2})\b', message)
-                        if http_match:
-                            code = int(http_match.group(1))
-                            info = self.http_status_info(code)
-                            if info:
-                                self.send_message(channel, info)
 
                         if message.startswith(self.command_prefix):
                             self.handle_command(channel, nick, hostmask, message)
