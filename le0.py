@@ -1507,6 +1507,14 @@ class IRCBot:
 
                         self.track_seen(nick, channel, message)
 
+                        # Auto-reply to duck hunt (CloudBot/Sopel duck plugin)
+                        # Duck appearance: "・゜゜・。。・ ゜゜\_ó< quack!"
+                        if re.search(r'\\_[^\s]*<', message) and 'quack' in message.lower():
+                            delay = random.uniform(2, 8)
+                            time.sleep(delay)
+                            action = random.choice(['bang', 'bef'])
+                            self.send_message(channel, action)
+
                         if message.startswith(self.command_prefix):
                             self.handle_command(channel, nick, hostmask, message)
 
