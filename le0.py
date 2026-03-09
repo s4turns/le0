@@ -1152,6 +1152,77 @@ class IRCBot:
         except Exception:
             return self._error("Could not evaluate expression")
 
+    def http_status_info(self, code: int) -> Optional[str]:
+        """Return RFC description for an HTTP status code, or None if unknown."""
+        codes = {
+            100: ("Continue",                        "Keep sending the request body.",                         "RFC 9110 §15.2.1"),
+            101: ("Switching Protocols",             "Server is switching to requested protocol.",             "RFC 9110 §15.2.2"),
+            102: ("Processing",                      "Request received, still processing.",                   "RFC 2518 §10.1"),
+            103: ("Early Hints",                     "Preload resources while server prepares response.",      "RFC 8297"),
+            200: ("OK",                              "Request succeeded.",                                     "RFC 9110 §15.3.1"),
+            201: ("Created",                         "Resource successfully created.",                         "RFC 9110 §15.3.2"),
+            202: ("Accepted",                        "Request accepted but not yet processed.",                "RFC 9110 §15.3.3"),
+            203: ("Non-Authoritative Information",   "Response from a third-party, not the origin server.",   "RFC 9110 §15.3.4"),
+            204: ("No Content",                      "Success, but no body to return.",                       "RFC 9110 §15.3.5"),
+            205: ("Reset Content",                   "Success; client should reset the document view.",       "RFC 9110 §15.3.6"),
+            206: ("Partial Content",                 "Partial resource returned (range request).",            "RFC 9110 §15.3.7"),
+            207: ("Multi-Status",                    "Multiple status codes for multiple operations.",        "RFC 4918 §11.1"),
+            208: ("Already Reported",                "Members already listed in a previous reply.",           "RFC 5842 §7.1"),
+            226: ("IM Used",                         "Response is a delta from a prior version.",             "RFC 3229 §10.4.1"),
+            300: ("Multiple Choices",                "Multiple representations available; pick one.",         "RFC 9110 §15.4.1"),
+            301: ("Moved Permanently",               "Resource has a new permanent URL.",                     "RFC 9110 §15.4.2"),
+            302: ("Found",                           "Resource temporarily at a different URL.",              "RFC 9110 §15.4.3"),
+            303: ("See Other",                       "Use GET on the redirect URL.",                          "RFC 9110 §15.4.4"),
+            304: ("Not Modified",                    "Cached version is still valid; use it.",                "RFC 9110 §15.4.5"),
+            305: ("Use Proxy",                       "Must access resource through proxy. (Deprecated)",      "RFC 9110 §15.4.6"),
+            307: ("Temporary Redirect",              "Same as 302 but method must not change.",               "RFC 9110 §15.4.8"),
+            308: ("Permanent Redirect",              "Same as 301 but method must not change.",               "RFC 9110 §15.4.9"),
+            400: ("Bad Request",                     "Server couldn't understand the request.",               "RFC 9110 §15.5.1"),
+            401: ("Unauthorized",                    "Authentication required.",                              "RFC 9110 §15.5.2"),
+            402: ("Payment Required",                "Reserved for future use.",                              "RFC 9110 §15.5.3"),
+            403: ("Forbidden",                       "Server understood but refuses to authorize.",           "RFC 9110 §15.5.4"),
+            404: ("Not Found",                       "Resource doesn't exist.",                               "RFC 9110 §15.5.5"),
+            405: ("Method Not Allowed",              "HTTP method not supported for this resource.",          "RFC 9110 §15.5.6"),
+            406: ("Not Acceptable",                  "No content matching the client's Accept headers.",      "RFC 9110 §15.5.7"),
+            407: ("Proxy Authentication Required",   "Must authenticate with proxy first.",                   "RFC 9110 §15.5.8"),
+            408: ("Request Timeout",                 "Server timed out waiting for the request.",             "RFC 9110 §15.5.9"),
+            409: ("Conflict",                        "Request conflicts with current state of resource.",     "RFC 9110 §15.5.10"),
+            410: ("Gone",                            "Resource permanently removed with no forwarding.",      "RFC 9110 §15.5.11"),
+            411: ("Length Required",                 "Content-Length header required.",                       "RFC 9110 §15.5.12"),
+            412: ("Precondition Failed",             "A request condition evaluated to false.",               "RFC 9110 §15.5.13"),
+            413: ("Content Too Large",               "Request body exceeds server's limit.",                  "RFC 9110 §15.5.14"),
+            414: ("URI Too Long",                    "Request URI is too long to process.",                   "RFC 9110 §15.5.15"),
+            415: ("Unsupported Media Type",          "Server won't accept the request's media format.",      "RFC 9110 §15.5.16"),
+            416: ("Range Not Satisfiable",           "Requested range can't be fulfilled.",                   "RFC 9110 §15.5.17"),
+            417: ("Expectation Failed",              "Expect header can't be met.",                           "RFC 9110 §15.5.18"),
+            418: ("I'm a Teapot",                    "Refuses to brew coffee. It's a teapot.",                "RFC 9110 §15.5.19"),
+            421: ("Misdirected Request",             "Request sent to a server that can't produce a response.","RFC 9110 §15.5.20"),
+            422: ("Unprocessable Content",           "Well-formed but semantically invalid request.",         "RFC 9110 §15.5.21"),
+            423: ("Locked",                          "Resource is locked.",                                   "RFC 4918 §11.3"),
+            424: ("Failed Dependency",               "Request failed because a dependency failed.",           "RFC 4918 §11.4"),
+            425: ("Too Early",                       "Server won't risk processing a replayed request.",      "RFC 8470 §5.2"),
+            426: ("Upgrade Required",                "Client must upgrade to a different protocol.",          "RFC 9110 §15.5.22"),
+            428: ("Precondition Required",           "Request must be conditional to prevent lost updates.",  "RFC 6585 §3"),
+            429: ("Too Many Requests",               "Rate limit hit; slow down.",                            "RFC 6585 §4"),
+            431: ("Request Header Fields Too Large", "Headers too large to process.",                         "RFC 6585 §5"),
+            451: ("Unavailable For Legal Reasons",   "Resource blocked for legal reasons.",                   "RFC 7725 §3"),
+            500: ("Internal Server Error",           "Server crashed or hit an unexpected condition.",        "RFC 9110 §15.6.1"),
+            501: ("Not Implemented",                 "Server doesn't support the requested method.",          "RFC 9110 §15.6.2"),
+            502: ("Bad Gateway",                     "Upstream server sent an invalid response.",             "RFC 9110 §15.6.3"),
+            503: ("Service Unavailable",             "Server is down or overloaded. Try again later.",        "RFC 9110 §15.6.4"),
+            504: ("Gateway Timeout",                 "Upstream server didn't respond in time.",               "RFC 9110 §15.6.5"),
+            505: ("HTTP Version Not Supported",      "Server doesn't support the HTTP version used.",         "RFC 9110 §15.6.6"),
+            506: ("Variant Also Negotiates",         "Circular reference in content negotiation config.",     "RFC 2295 §8.1"),
+            507: ("Insufficient Storage",            "Server has no space to complete the request.",          "RFC 4918 §11.5"),
+            508: ("Loop Detected",                   "Infinite loop detected while processing request.",      "RFC 5842 §7.2"),
+            510: ("Not Extended",                    "Further extensions required for the server to fulfill.","RFC 2774 §7"),
+            511: ("Network Authentication Required", "Must authenticate to gain network access.",             "RFC 6585 §6"),
+        }
+        if code not in codes:
+            return None
+        name, desc, rfc = codes[code]
+        return f"{B}{C.CYAN}{code}{R} {B}{COLOR_ACCENT}{name}{R} {COLOR_PRIMARY}|{R} {desc} {COLOR_PRIMARY}[{rfc}]{R}"
+
     # ─── Command Handler ──────────────────────────────────────────
 
     def handle_command(self, channel: str, nick: str, hostmask: str, message: str):
@@ -1514,6 +1585,14 @@ class IRCBot:
                             time.sleep(delay)
                             action = random.choice(['bang', 'bef'])
                             self.send_message(channel, action)
+
+                        # Auto-reply HTTP status codes with RFC info
+                        http_match = re.search(r'\b([1-5]\d{2})\b', message)
+                        if http_match:
+                            code = int(http_match.group(1))
+                            info = self.http_status_info(code)
+                            if info:
+                                self.send_message(channel, info)
 
                         if message.startswith(self.command_prefix):
                             self.handle_command(channel, nick, hostmask, message)
