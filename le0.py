@@ -1493,7 +1493,7 @@ class IRCBot:
                 time.sleep(0.2)
 
         # ── HTTP Status ──
-        elif command in (f"{p}http", f"{p}http"):
+        elif command in (f"{p}http", f"{p}h"):
             if len(parts) < 2:
                 self.send_message(channel, self._error(f"Usage: {p}http <code>"))
                 return
