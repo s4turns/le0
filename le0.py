@@ -1698,7 +1698,7 @@ class IRCBot:
             return
 
         # ── Weather ──
-        if command in (f"{p}weather", f"{p}we"):
+        if command in (f"{p}weather", f"{p}w"):
             if len(parts) < 2:
                 self.send_message(channel, self._error(f"Usage: {p}weather <location>"))
                 return
@@ -1918,7 +1918,7 @@ class IRCBot:
                 time.sleep(0.3)
 
         # ── Wikipedia ──
-        elif command in (f"{p}wiki", f"{p}w"):
+        elif command in (f"{p}wiki", f"{p}wi"):
             if len(parts) < 2:
                 self.send_message(channel, self._error(f"Usage: {p}wiki <topic>"))
                 return
@@ -2069,10 +2069,10 @@ class IRCBot:
         elif command == f"{p}help":
             lines = [
                 self._header(f"le0 Bot Commands {BOX_SEP} Help Menu"),
-                f" {B}{C.CYAN}[Weather]{R}  {COLOR_ACCENT}{p}weather/we <loc>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}forecast/f <loc>{R}",
+                f" {B}{C.CYAN}[Weather]{R}  {COLOR_ACCENT}{p}weather/w <loc>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}forecast/f <loc>{R}",
                 f" {B}{C.YELLOW}[Info]{R}     {COLOR_ACCENT}{p}urban/ud <term>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}time [loc]{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}http <code>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}dns <host>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}geo <ip>{R}",
                 f" {B}{C.GREEN}[Net]{R}      {COLOR_ACCENT}{p}title/t <url>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}isup/up <host>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}shorten <url>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}stock <tick>{R}",
-                f" {B}{C.LIGHT_BLUE}[Lookup]{R}   {COLOR_ACCENT}{p}wiki/w <topic>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}define/def <word>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}tr <lang> <text>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}whois <nick>{R}",
+                f" {B}{C.LIGHT_BLUE}[Lookup]{R}   {COLOR_ACCENT}{p}wiki/wi <topic>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}define/def <word>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}tr <lang> <text>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}whois <nick>{R}",
                 f" {B}{C.CYAN}[Fun]{R}      {COLOR_ACCENT}{p}coin/flip{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}roll/dice [XdY]{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}8ball/8 <q>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}rps <r/p/s>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}fact{R}",
                 f" {B}{C.YELLOW}[Social]{R}   {COLOR_ACCENT}{p}quote{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}addquote <text>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}tell <nick> <msg>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}paste <text>{R}",
                 f" {B}{C.LIGHT_GREEN}[Utility]{R}  {COLOR_ACCENT}{p}seen <nick>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}ping{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}uptime{R}",
@@ -2292,7 +2292,7 @@ if __name__ == "__main__":
     ╠═══════════════════════════════════════╣
     """)
     p = bot.command_prefix
-    print(f"    ║  Weather  │ {p}weather/we  {p}forecast/f   ║")
+    print(f"    ║  Weather  │ {p}weather/w   {p}forecast/f   ║")
     print(f"    ║  Info     │ {p}urban/ud   {p}time          ║")
     print(f"    ║  Fun      │ {p}coin  {p}roll  {p}8ball  {p}rps ║")
     print(f"    ║  Social   │ {p}quote  {p}addquote          ║")
