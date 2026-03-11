@@ -1502,10 +1502,13 @@ class IRCBot:
             )
             aes_key = kdf.derive(key)
 
+            # PrivateBin 2.x decrypts then calls JSON.parse() on the result,
+            # expecting {"paste": "content"}. Wrap before compressing.
+            content_json = json.dumps({"paste": text}, separators=(',', ':'), ensure_ascii=False)
             # PrivateBin 2.x WASM zlib uses raw DEFLATE (NO_ZLIB_HEADER),
             # not the zlib-wrapped format that _zlib.compress() produces.
             _co = _zlib.compressobj(level=6, method=_zlib.DEFLATED, wbits=-15)
-            compressed = _co.compress(text.encode('utf-8')) + _co.flush()
+            compressed = _co.compress(content_json.encode('utf-8')) + _co.flush()
 
             spec = [
                 base64.b64encode(iv).decode(),
