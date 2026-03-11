@@ -1324,10 +1324,14 @@ class IRCBot:
     def get_wiki(self, topic: str) -> str:
         """Fetch a Wikipedia article summary."""
         try:
-            url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{urllib.parse.quote(topic)}"
+            # Wikipedia REST API requires underscores, not %20, for spaces
+            slug = urllib.parse.quote(topic.replace(' ', '_'), safe='')
+            url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{slug}"
             resp = requests.get(url, timeout=5, headers={'Accept': 'application/json'})
             if resp.status_code == 404:
                 return self._error(f"No Wikipedia article found for '{topic}'")
+            if not resp.text:
+                return self._error(f"Wikipedia returned an empty response")
             data = resp.json()
             if data.get('type') == 'disambiguation':
                 return self._error(f"'{topic}' is a disambiguation page — be more specific")
