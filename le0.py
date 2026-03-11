@@ -1321,23 +1321,46 @@ class IRCBot:
         except Exception as e:
             return self._error(f"Definition lookup failed: {e}")
 
+    def _wiki_summary(self, title: str):
+        """Fetch Wikipedia summary JSON for an exact title. Returns (data, error_str)."""
+        slug = urllib.parse.quote(title.replace(' ', '_'), safe='')
+        resp = requests.get(
+            f"https://en.wikipedia.org/api/rest_v1/page/summary/{slug}",
+            timeout=6, headers={'Accept': 'application/json'},
+        )
+        if resp.status_code == 404 or not resp.text:
+            return None, None
+        try:
+            return resp.json(), None
+        except ValueError:
+            return None, "Wikipedia returned a non-JSON response"
+
     def get_wiki(self, topic: str) -> str:
         """Fetch a Wikipedia article summary."""
         try:
-            # Wikipedia REST API requires underscores, not %20, for spaces
-            slug = urllib.parse.quote(topic.replace(' ', '_'), safe='')
-            url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{slug}"
-            resp = requests.get(url, timeout=5, headers={'Accept': 'application/json'})
-            if resp.status_code == 404:
+            data, err = self._wiki_summary(topic)
+
+            # If direct title lookup fails, use OpenSearch to resolve the real title
+            if data is None:
+                search_resp = requests.get(
+                    "https://en.wikipedia.org/w/api.php",
+                    params={'action': 'opensearch', 'search': topic, 'limit': 1, 'format': 'json'},
+                    timeout=6,
+                )
+                search = search_resp.json()
+                if not search[1]:
+                    return self._error(f"No Wikipedia article found for '{topic}'")
+                data, err = self._wiki_summary(search[1][0])
+
+            if err:
+                return self._error(err)
+            if data is None:
                 return self._error(f"No Wikipedia article found for '{topic}'")
-            if not resp.text:
-                return self._error(f"Wikipedia returned an empty response")
-            data = resp.json()
             if data.get('type') == 'disambiguation':
                 return self._error(f"'{topic}' is a disambiguation page — be more specific")
-            title = data.get('title', topic)
+
+            title   = data.get('title', topic)
             extract = data.get('extract', '')
-            # Trim to first 2 sentences max
             sentences = re.split(r'(?<=[.!?])\s+', extract)
             summary = ' '.join(sentences[:2])
             if len(summary) > 400:
@@ -1469,11 +1492,13 @@ class IRCBot:
             iv   = secrets.token_bytes(12)
             salt = secrets.token_bytes(8)
 
+            ITERATIONS = 100000  # standard PrivateBin default
+
             kdf = PBKDF2HMAC(
                 algorithm=crypto_hashes.SHA256(),
                 length=32,
                 salt=salt,
-                iterations=310000,
+                iterations=ITERATIONS,
             )
             aes_key = kdf.derive(key)
 
@@ -1482,7 +1507,7 @@ class IRCBot:
             spec = [
                 base64.b64encode(iv).decode(),
                 base64.b64encode(salt).decode(),
-                310000, 256, 128, 'aes', 'gcm', 'zlib'
+                ITERATIONS, 256, 128, 'aes', 'gcm', 'zlib'
             ]
             adata = [spec, 'plaintext', 0, 0]
             additional = json.dumps(adata, separators=(',', ':')).encode('utf-8')
@@ -1496,9 +1521,10 @@ class IRCBot:
                 'adata': adata,
                 'meta': {'expire': expire}
             }
+            # Use compact JSON to avoid any whitespace-related parsing quirks
             resp = requests.post(
                 self.privatebin_url,
-                json=payload,
+                data=json.dumps(payload, separators=(',', ':')),
                 headers={
                     'Content-Type': 'application/json',
                     'X-Requested-With': 'JSONHttpRequest',
@@ -1508,10 +1534,9 @@ class IRCBot:
             data = resp.json()
             if data.get('status') != 0:
                 return self._error(data.get('message', 'Paste creation failed'))
-            paste_id = data['id']
             key_b58 = self._base58_encode(key)
-            url = f"{self.privatebin_url}/?{paste_id}#{key_b58}"
-            return f"{self._header('Paste')} {COLOR_ACCENT}{url}{R}"
+            paste_url = f"{self.privatebin_url}{data['url']}#{key_b58}"
+            return f"{self._header('Paste')} {COLOR_ACCENT}{paste_url}{R}"
         except Exception as e:
             return self._error(f"Paste failed: {e}")
 
