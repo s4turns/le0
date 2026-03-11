@@ -16,17 +16,8 @@ import sys
 import importlib
 import fnmatch
 import json
-import secrets
 import requests
 from typing import Optional
-
-try:
-    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-    from cryptography.hazmat.primitives import hashes as crypto_hashes
-    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-    _CRYPTO_AVAILABLE = True
-except ImportError:
-    _CRYPTO_AVAILABLE = False
 
 
 class IRCColors:
@@ -299,8 +290,6 @@ class IRCBot:
         self.tells_file = os.path.join(_base, 'tells.json')
         self._load_tells()
 
-        # PrivateBin instance
-        self.privatebin_url = "https://paste.interdo.me"
 
     # ─── Enhanced formatting helpers ───────────────────────────────
 
@@ -1274,7 +1263,7 @@ class IRCBot:
         name, desc, rfc = codes[code]
         return f"{B}{C.CYAN}{code}{R} {B}{COLOR_ACCENT}{name}{R} {COLOR_PRIMARY}|{R} {desc} {COLOR_PRIMARY}[{rfc}]{R}"
 
-    # ─── Title / Define / Wiki / Translate / Shorten / Stock / IsUp / Paste / Tell ─
+    # ─── Title / Define / Translate / Shorten / Stock / IsUp / Tell ───────────────
 
     def get_title(self, url: str) -> str:
         """Fetch the <title> of a webpage."""
@@ -1320,59 +1309,6 @@ class IRCBot:
             return "\n".join(lines)
         except Exception as e:
             return self._error(f"Definition lookup failed: {e}")
-
-    def _wiki_summary(self, title: str):
-        """Fetch Wikipedia summary JSON for an exact title. Returns (data, error_str)."""
-        slug = urllib.parse.quote(title.replace(' ', '_'), safe='')
-        resp = requests.get(
-            f"https://en.wikipedia.org/api/rest_v1/page/summary/{slug}",
-            timeout=6, headers={'Accept': 'application/json'},
-        )
-        if resp.status_code == 404 or not resp.text:
-            return None, None
-        try:
-            return resp.json(), None
-        except ValueError:
-            return None, "Wikipedia returned a non-JSON response"
-
-    def get_wiki(self, topic: str) -> str:
-        """Fetch a Wikipedia article summary."""
-        try:
-            data, err = self._wiki_summary(topic)
-
-            # If direct title lookup fails, use OpenSearch to resolve the real title
-            if data is None:
-                search_resp = requests.get(
-                    "https://en.wikipedia.org/w/api.php",
-                    params={'action': 'opensearch', 'search': topic, 'limit': 1, 'format': 'json'},
-                    timeout=6,
-                )
-                search = search_resp.json()
-                if not search[1]:
-                    return self._error(f"No Wikipedia article found for '{topic}'")
-                data, err = self._wiki_summary(search[1][0])
-
-            if err:
-                return self._error(err)
-            if data is None:
-                return self._error(f"No Wikipedia article found for '{topic}'")
-            if data.get('type') == 'disambiguation':
-                return self._error(f"'{topic}' is a disambiguation page — be more specific")
-
-            title   = data.get('title', topic)
-            extract = data.get('extract', '')
-            sentences = re.split(r'(?<=[.!?])\s+', extract)
-            summary = ' '.join(sentences[:2])
-            if len(summary) > 400:
-                summary = summary[:397] + '...'
-            wiki_url = data.get('content_urls', {}).get('desktop', {}).get('page', '')
-            lines = [self._header(f"Wiki: {title}")]
-            lines.append(self._arrow_line(f"{COLOR_ACCENT}{summary}{R}"))
-            if wiki_url:
-                lines.append(self._arrow_line(f"{C.LIGHT_GREY}{wiki_url}{R}"))
-            return "\n".join(lines)
-        except Exception as e:
-            return self._error(f"Wikipedia lookup failed: {e}")
 
     def get_translate(self, text: str, target: str) -> str:
         """Translate text using MyMemory API (auto-detect source)."""
@@ -1463,88 +1399,6 @@ class IRCBot:
             return f"{self._header('IsUp')} {B}{COLOR_ACCENT}{original}{R} is {C.RED}DOWN{R} (timed out)"
         except Exception as e:
             return self._error(f"IsUp check failed: {e}")
-
-    @staticmethod
-    def _base58_encode(data: bytes) -> str:
-        """Encode bytes to Base58 (Bitcoin alphabet)."""
-        ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
-        count = 0
-        for byte in data:
-            if byte == 0:
-                count += 1
-            else:
-                break
-        n = int.from_bytes(data, 'big')
-        result = []
-        while n > 0:
-            n, r = divmod(n, 58)
-            result.append(ALPHABET[r])
-        result.extend(['1'] * count)
-        return ''.join(reversed(result))
-
-    def create_paste(self, text: str, expire: str = '1week') -> str:
-        """Create a PrivateBin paste and return the URL."""
-        if not _CRYPTO_AVAILABLE:
-            return self._error("PrivateBin paste requires the 'cryptography' package")
-        try:
-            import zlib as _zlib
-            key  = secrets.token_bytes(32)
-            iv   = secrets.token_bytes(12)
-            salt = secrets.token_bytes(8)
-
-            ITERATIONS = 100000  # standard PrivateBin default
-
-            kdf = PBKDF2HMAC(
-                algorithm=crypto_hashes.SHA256(),
-                length=32,
-                salt=salt,
-                iterations=ITERATIONS,
-            )
-            aes_key = kdf.derive(key)
-
-            # PrivateBin 2.x decrypts then calls JSON.parse() on the result,
-            # expecting {"paste": "content"}. Wrap before compressing.
-            content_json = json.dumps({"paste": text}, separators=(',', ':'), ensure_ascii=False)
-            # PrivateBin 2.x WASM zlib uses raw DEFLATE (NO_ZLIB_HEADER),
-            # not the zlib-wrapped format that _zlib.compress() produces.
-            _co = _zlib.compressobj(level=6, method=_zlib.DEFLATED, wbits=-15)
-            compressed = _co.compress(content_json.encode('utf-8')) + _co.flush()
-
-            spec = [
-                base64.b64encode(iv).decode(),
-                base64.b64encode(salt).decode(),
-                ITERATIONS, 256, 128, 'aes', 'gcm', 'zlib'
-            ]
-            adata = [spec, 'plaintext', 0, 0]
-            additional = json.dumps(adata, separators=(',', ':')).encode('utf-8')
-
-            aesgcm = AESGCM(aes_key)
-            ct_tag = aesgcm.encrypt(iv, compressed, additional)
-
-            payload = {
-                'v': 2,
-                'ct': base64.b64encode(ct_tag).decode(),
-                'adata': adata,
-                'meta': {'expire': expire}
-            }
-            # Use compact JSON to avoid any whitespace-related parsing quirks
-            resp = requests.post(
-                self.privatebin_url,
-                data=json.dumps(payload, separators=(',', ':')),
-                headers={
-                    'Content-Type': 'application/json',
-                    'X-Requested-With': 'JSONHttpRequest',
-                },
-                timeout=8,
-            )
-            data = resp.json()
-            if data.get('status') != 0:
-                return self._error(data.get('message', 'Paste creation failed'))
-            key_b58 = self._base58_encode(key)
-            paste_url = f"{self.privatebin_url}{data['url']}#{key_b58}"
-            return f"{self._header('Paste')} {COLOR_ACCENT}{paste_url}{R}"
-        except Exception as e:
-            return self._error(f"Paste failed: {e}")
 
     def add_tell(self, from_nick: str, to_nick: str, message: str) -> str:
         """Store a tell message for delivery when to_nick next speaks."""
@@ -1952,20 +1806,6 @@ class IRCBot:
                 self.send_message(channel, line)
                 time.sleep(0.3)
 
-        # ── Wikipedia ──
-        elif command in (f"{p}wiki", f"{p}wi"):
-            if len(parts) < 2:
-                self.send_message(channel, self._error(f"Usage: {p}wiki <topic>"))
-                return
-            topic = Sanitizer.sanitize_term(" ".join(parts[1:]))
-            if not topic:
-                self.send_message(channel, self._error("Invalid topic"))
-                return
-            result = self.get_wiki(topic)
-            for line in result.split('\n'):
-                self.send_message(channel, line)
-                time.sleep(0.3)
-
         # ── Translate ──
         elif command in (f"{p}tr", f"{p}translate"):
             if len(parts) < 3:
@@ -2013,20 +1853,6 @@ class IRCBot:
                 return
             host_arg = Sanitizer.sanitize_irc_output(parts[1])
             result = self.get_isup(host_arg)
-            for line in result.split('\n'):
-                self.send_message(channel, line)
-                time.sleep(0.2)
-
-        # ── Paste ──
-        elif command == f"{p}paste":
-            if len(parts) < 2:
-                self.send_message(channel, self._error(f"Usage: {p}paste <text>"))
-                return
-            paste_text = Sanitizer.sanitize_generic(" ".join(parts[1:]))
-            if not paste_text:
-                self.send_message(channel, self._error("Invalid or empty paste content"))
-                return
-            result = self.create_paste(paste_text)
             for line in result.split('\n'):
                 self.send_message(channel, line)
                 time.sleep(0.2)
@@ -2102,20 +1928,21 @@ class IRCBot:
 
         # ── Help ──
         elif command == f"{p}help":
+            dot = f" {COLOR_PRIMARY}·{R} "
             lines = [
-                self._header(f"le0 Bot Commands {BOX_SEP} Help Menu"),
-                f" {B}{C.CYAN}[Weather]{R}  {COLOR_ACCENT}{p}weather/w <loc>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}forecast/f <loc>{R}",
-                f" {B}{C.YELLOW}[Info]{R}     {COLOR_ACCENT}{p}urban/ud <term>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}time [loc]{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}http <code>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}dns <host>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}geo <ip>{R}",
-                f" {B}{C.GREEN}[Net]{R}      {COLOR_ACCENT}{p}title/t <url>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}isup/up <host>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}shorten <url>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}stock <tick>{R}",
-                f" {B}{C.LIGHT_BLUE}[Lookup]{R}   {COLOR_ACCENT}{p}wiki/wi <topic>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}define/def <word>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}tr <lang> <text>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}whois <nick>{R}",
-                f" {B}{C.CYAN}[Fun]{R}      {COLOR_ACCENT}{p}coin/flip{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}roll/dice [XdY]{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}8ball/8 <q>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}rps <r/p/s>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}fact{R}",
-                f" {B}{C.YELLOW}[Social]{R}   {COLOR_ACCENT}{p}quote{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}addquote <text>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}tell <nick> <msg>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}paste <text>{R}",
-                f" {B}{C.LIGHT_GREEN}[Utility]{R}  {COLOR_ACCENT}{p}seen <nick>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}ping{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}uptime{R}",
-                f" {B}{C.ORANGE}[Tools]{R}    {COLOR_ACCENT}{p}calc <expr>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}hash <text>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}base64/b64 <e/d>{R}",
-                f" {B}{C.LIGHT_BLUE}[Text]{R}     {COLOR_ACCENT}{p}reverse <text>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}mock <text>{R}",
+                self._header("le0 Commands"),
+                f" {B}{C.CYAN}Weather{R}   {COLOR_ACCENT}{p}weather/w <loc>{R}{dot}{COLOR_ACCENT}{p}forecast/f <loc>{R}",
+                f" {B}{C.YELLOW}Info{R}      {COLOR_ACCENT}{p}urban/ud <term>{R}{dot}{COLOR_ACCENT}{p}time [loc]{R}{dot}{COLOR_ACCENT}{p}http <code>{R}{dot}{COLOR_ACCENT}{p}dns <host>{R}{dot}{COLOR_ACCENT}{p}geo <ip>{R}",
+                f" {B}{C.GREEN}Net{R}       {COLOR_ACCENT}{p}title/t <url>{R}{dot}{COLOR_ACCENT}{p}isup/up <host>{R}{dot}{COLOR_ACCENT}{p}shorten <url>{R}{dot}{COLOR_ACCENT}{p}stock <tick>{R}",
+                f" {B}{C.LIGHT_BLUE}Lookup{R}    {COLOR_ACCENT}{p}define/def <word>{R}{dot}{COLOR_ACCENT}{p}tr <lang> <text>{R}{dot}{COLOR_ACCENT}{p}whois <nick>{R}",
+                f" {B}{C.CYAN}Fun{R}       {COLOR_ACCENT}{p}coin/flip{R}{dot}{COLOR_ACCENT}{p}roll/dice [XdY]{R}{dot}{COLOR_ACCENT}{p}8ball/8 <q>{R}{dot}{COLOR_ACCENT}{p}rps <r/p/s>{R}{dot}{COLOR_ACCENT}{p}fact{R}",
+                f" {B}{C.YELLOW}Social{R}    {COLOR_ACCENT}{p}quote{R}{dot}{COLOR_ACCENT}{p}addquote <text>{R}{dot}{COLOR_ACCENT}{p}tell <nick> <msg>{R}",
+                f" {B}{C.LIGHT_GREEN}Utility{R}   {COLOR_ACCENT}{p}seen <nick>{R}{dot}{COLOR_ACCENT}{p}ping{R}{dot}{COLOR_ACCENT}{p}uptime{R}",
+                f" {B}{C.ORANGE}Tools{R}     {COLOR_ACCENT}{p}calc <expr>{R}{dot}{COLOR_ACCENT}{p}hash <text>{R}{dot}{COLOR_ACCENT}{p}base64/b64 <e/d>{R}",
+                f" {B}{C.LIGHT_BLUE}Text{R}      {COLOR_ACCENT}{p}reverse <text>{R}{dot}{COLOR_ACCENT}{p}mock <text>{R}",
             ]
             if self._is_admin(hostmask):
-                lines.append(f" {B}{C.RED}[Admin]{R}    {COLOR_ACCENT}{p}join{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}part{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}quit{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}say{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}nick{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}kick{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}raw{R}")
+                lines.append(f" {B}{C.RED}Admin{R}     {COLOR_ACCENT}{p}join{R}{dot}{COLOR_ACCENT}{p}part{R}{dot}{COLOR_ACCENT}{p}quit{R}{dot}{COLOR_ACCENT}{p}say{R}{dot}{COLOR_ACCENT}{p}nick{R}{dot}{COLOR_ACCENT}{p}kick{R}{dot}{COLOR_ACCENT}{p}raw{R}")
             for line in lines:
                 self.send_message(channel, line)
                 time.sleep(0.3)
