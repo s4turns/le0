@@ -1502,7 +1502,10 @@ class IRCBot:
             )
             aes_key = kdf.derive(key)
 
-            compressed = _zlib.compress(text.encode('utf-8'), level=6)
+            # PrivateBin 2.x WASM zlib uses raw DEFLATE (NO_ZLIB_HEADER),
+            # not the zlib-wrapped format that _zlib.compress() produces.
+            _co = _zlib.compressobj(level=6, method=_zlib.DEFLATED, wbits=-15)
+            compressed = _co.compress(text.encode('utf-8')) + _co.flush()
 
             spec = [
                 base64.b64encode(iv).decode(),
