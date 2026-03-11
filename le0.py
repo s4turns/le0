@@ -16,8 +16,17 @@ import sys
 import importlib
 import fnmatch
 import json
+import secrets
 import requests
 from typing import Optional
+
+try:
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+    from cryptography.hazmat.primitives import hashes as crypto_hashes
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    _CRYPTO_AVAILABLE = True
+except ImportError:
+    _CRYPTO_AVAILABLE = False
 
 
 class IRCColors:
@@ -163,6 +172,19 @@ class Sanitizer:
             return None
         return text
 
+    # Valid hostname/IP pattern: labels, dots, colons (IPv6), brackets not needed
+    HOSTNAME_RE = re.compile(r'^[A-Za-z0-9.\-:]{1,253}$')
+
+    @staticmethod
+    def sanitize_hostname(host: str) -> Optional[str]:
+        """Sanitize a hostname or IP address."""
+        host = Sanitizer.strip_irc_controls(host).strip().lower()
+        if not host or len(host) > 253:
+            return None
+        if not Sanitizer.HOSTNAME_RE.match(host):
+            return None
+        return host
+
     @staticmethod
     def sanitize_irc_output(text: str) -> str:
         """Prevent CRLF injection in outgoing IRC messages."""
@@ -268,6 +290,17 @@ class IRCBot:
         # Per-user rate limiting
         self.user_last_cmd = {}
         self.rate_limit_seconds = 2
+
+        # Pending WHOIS requests: nick_lower -> {'channel': ch, 'data': {}}
+        self.pending_whois = {}
+
+        # Pending tells: nick_lower -> [(from_nick, message, ts), ...]
+        self.tells = {}
+        self.tells_file = os.path.join(_base, 'tells.json')
+        self._load_tells()
+
+        # PrivateBin instance
+        self.privatebin_url = "https://paste.interdo.me"
 
     # ─── Enhanced formatting helpers ───────────────────────────────
 
@@ -519,6 +552,24 @@ class IRCBot:
                 json.dump(self.seen_users, f, indent=2)
         except IOError as e:
             print(f"Warning: could not save seen data: {e}")
+
+    def _load_tells(self):
+        """Load pending tells from JSON file."""
+        try:
+            if os.path.exists(self.tells_file):
+                with open(self.tells_file, 'r') as f:
+                    self.tells = json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"Warning: could not load tells: {e}")
+            self.tells = {}
+
+    def _save_tells(self):
+        """Save pending tells to JSON file."""
+        try:
+            with open(self.tells_file, 'w') as f:
+                json.dump(self.tells, f, indent=2)
+        except IOError as e:
+            print(f"Warning: could not save tells: {e}")
 
     # ─── Rate limiting ────────────────────────────────────────────
 
@@ -1223,6 +1274,355 @@ class IRCBot:
         name, desc, rfc = codes[code]
         return f"{B}{C.CYAN}{code}{R} {B}{COLOR_ACCENT}{name}{R} {COLOR_PRIMARY}|{R} {desc} {COLOR_PRIMARY}[{rfc}]{R}"
 
+    # ─── Title / Define / Wiki / Translate / Shorten / Stock / IsUp / Paste / Tell ─
+
+    def get_title(self, url: str) -> str:
+        """Fetch the <title> of a webpage."""
+        try:
+            resp = requests.get(url, timeout=6, headers={'User-Agent': 'le0-irc-bot/1.0'}, allow_redirects=True)
+            resp.raise_for_status()
+            # Extract title with regex (avoids html.parser encoding edge-cases)
+            m = re.search(r'<title[^>]*>([^<]{1,300})', resp.text, re.IGNORECASE | re.DOTALL)
+            if not m:
+                return self._error("No title found")
+            title = re.sub(r'\s+', ' ', m.group(1)).strip()
+            # Decode HTML entities
+            for ent, ch in [('&amp;','&'),('&lt;','<'),('&gt;','>'),('&quot;','"'),('&#39;',"'"),('&nbsp;',' ')]:
+                title = title.replace(ent, ch)
+            return f"{self._header('Title')} {COLOR_ACCENT}{title}{R}"
+        except Exception as e:
+            return self._error(f"Could not fetch title: {e}")
+
+    def get_definition(self, word: str) -> str:
+        """Look up a word definition via Free Dictionary API."""
+        try:
+            url = f"https://api.dictionaryapi.dev/api/v2/entries/en/{urllib.parse.quote(word)}"
+            resp = requests.get(url, timeout=5)
+            if resp.status_code == 404:
+                return self._error(f"No definition found for '{word}'")
+            data = resp.json()
+            entry = data[0]
+            phonetic = entry.get('phonetic', '')
+            meanings = entry.get('meanings', [])
+            lines = [self._header(f"Define: {word}" + (f"  {phonetic}" if phonetic else ""))]
+            shown = 0
+            for meaning in meanings[:3]:
+                if shown >= 3:
+                    break
+                pos = meaning.get('partOfSpeech', '')
+                for defn in meaning.get('definitions', [])[:1]:
+                    definition = defn.get('definition', '')
+                    example = defn.get('example', '')
+                    lines.append(self._arrow_line(f"{B}{C.CYAN}{pos}{R} {COLOR_ACCENT}{definition}{R}"))
+                    if example:
+                        lines.append(self._arrow_line(f"  {C.LIGHT_GREY}\"{example}\"{R}"))
+                    shown += 1
+            return "\n".join(lines)
+        except Exception as e:
+            return self._error(f"Definition lookup failed: {e}")
+
+    def get_wiki(self, topic: str) -> str:
+        """Fetch a Wikipedia article summary."""
+        try:
+            url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{urllib.parse.quote(topic)}"
+            resp = requests.get(url, timeout=5, headers={'Accept': 'application/json'})
+            if resp.status_code == 404:
+                return self._error(f"No Wikipedia article found for '{topic}'")
+            data = resp.json()
+            if data.get('type') == 'disambiguation':
+                return self._error(f"'{topic}' is a disambiguation page — be more specific")
+            title = data.get('title', topic)
+            extract = data.get('extract', '')
+            # Trim to first 2 sentences max
+            sentences = re.split(r'(?<=[.!?])\s+', extract)
+            summary = ' '.join(sentences[:2])
+            if len(summary) > 400:
+                summary = summary[:397] + '...'
+            wiki_url = data.get('content_urls', {}).get('desktop', {}).get('page', '')
+            lines = [self._header(f"Wiki: {title}")]
+            lines.append(self._arrow_line(f"{COLOR_ACCENT}{summary}{R}"))
+            if wiki_url:
+                lines.append(self._arrow_line(f"{C.LIGHT_GREY}{wiki_url}{R}"))
+            return "\n".join(lines)
+        except Exception as e:
+            return self._error(f"Wikipedia lookup failed: {e}")
+
+    def get_translate(self, text: str, target: str) -> str:
+        """Translate text using MyMemory API (auto-detect source)."""
+        try:
+            params = urllib.parse.urlencode({'q': text, 'langpair': f'autodetect|{target}'})
+            url = f"https://api.mymemory.translated.net/get?{params}"
+            resp = requests.get(url, timeout=6)
+            data = resp.json()
+            if data.get('responseStatus') != 200:
+                return self._error(data.get('responseDetails', 'Translation failed'))
+            translated = data['responseData']['translatedText']
+            detected = data.get('responseData', {}).get('detectedLanguage', '')
+            label = f"Translate → {target.upper()}"
+            if detected:
+                label += f" (from {detected})"
+            lines = [
+                self._header(label),
+                self._arrow_line(f"{COLOR_ACCENT}{translated}{R}"),
+            ]
+            return "\n".join(lines)
+        except Exception as e:
+            return self._error(f"Translation failed: {e}")
+
+    def get_shorten(self, url: str) -> str:
+        """Shorten a URL using TinyURL."""
+        try:
+            api = f"https://tinyurl.com/api-create.php?url={urllib.parse.quote(url, safe='')}"
+            resp = requests.get(api, timeout=5)
+            short = resp.text.strip()
+            if not short.startswith('http'):
+                return self._error("Shortener returned an unexpected response")
+            return f"{self._header('Shorten')} {COLOR_ACCENT}{short}{R}"
+        except Exception as e:
+            return self._error(f"URL shortening failed: {e}")
+
+    def get_stock(self, ticker: str) -> str:
+        """Get stock quote from Yahoo Finance."""
+        try:
+            ticker = ticker.upper()
+            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{urllib.parse.quote(ticker)}?interval=1d&range=1d"
+            resp = requests.get(url, timeout=6, headers={'User-Agent': 'le0-irc-bot/1.0'})
+            data = resp.json()
+            meta = data.get('chart', {}).get('result', [{}])[0].get('meta', {})
+            if not meta:
+                return self._error(f"No data found for ticker '{ticker}'")
+            name        = meta.get('shortName', ticker)
+            price       = meta.get('regularMarketPrice', 0)
+            prev_close  = meta.get('chartPreviousClose', meta.get('previousClose', 0))
+            currency    = meta.get('currency', 'USD')
+            exchange    = meta.get('exchangeName', '')
+            change      = price - prev_close if prev_close else 0
+            change_pct  = (change / prev_close * 100) if prev_close else 0
+            if change >= 0:
+                arrow = f"{C.LIGHT_GREEN}▲{R}"
+                change_col = C.LIGHT_GREEN
+            else:
+                arrow = f"{C.RED}▼{R}"
+                change_col = C.RED
+            lines = [
+                self._header(f"Stock: {ticker} — {name}"),
+                self._arrow_line(
+                    f"{B}{C.CYAN}Price{R}  {COLOR_PRIMARY}|{R} {B}{COLOR_ACCENT}{price:.2f} {currency}{R}"
+                    f"  {arrow} {change_col}{change:+.2f} ({change_pct:+.2f}%){R}"
+                    + (f"  {C.LIGHT_GREY}{exchange}{R}" if exchange else "")
+                ),
+            ]
+            return "\n".join(lines)
+        except Exception as e:
+            return self._error(f"Stock lookup failed: {e}")
+
+    def get_isup(self, host: str) -> str:
+        """Check if a host/URL is reachable."""
+        # Normalize: strip scheme if present
+        original = host
+        if '://' not in host:
+            host = 'http://' + host
+        try:
+            resp = requests.get(host, timeout=5, headers={'User-Agent': 'le0-irc-bot/1.0'}, allow_redirects=True)
+            code = resp.status_code
+            if code < 400:
+                status = f"{C.LIGHT_GREEN}UP{R}"
+            else:
+                status = f"{C.ORANGE}UP (HTTP {code}){R}"
+            return f"{self._header('IsUp')} {B}{COLOR_ACCENT}{original}{R} is {status}"
+        except requests.exceptions.ConnectionError:
+            return f"{self._header('IsUp')} {B}{COLOR_ACCENT}{original}{R} is {C.RED}DOWN{R} (connection refused)"
+        except requests.exceptions.Timeout:
+            return f"{self._header('IsUp')} {B}{COLOR_ACCENT}{original}{R} is {C.RED}DOWN{R} (timed out)"
+        except Exception as e:
+            return self._error(f"IsUp check failed: {e}")
+
+    @staticmethod
+    def _base58_encode(data: bytes) -> str:
+        """Encode bytes to Base58 (Bitcoin alphabet)."""
+        ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
+        count = 0
+        for byte in data:
+            if byte == 0:
+                count += 1
+            else:
+                break
+        n = int.from_bytes(data, 'big')
+        result = []
+        while n > 0:
+            n, r = divmod(n, 58)
+            result.append(ALPHABET[r])
+        result.extend(['1'] * count)
+        return ''.join(reversed(result))
+
+    def create_paste(self, text: str, expire: str = '1week') -> str:
+        """Create a PrivateBin paste and return the URL."""
+        if not _CRYPTO_AVAILABLE:
+            return self._error("PrivateBin paste requires the 'cryptography' package")
+        try:
+            import zlib as _zlib
+            key  = secrets.token_bytes(32)
+            iv   = secrets.token_bytes(12)
+            salt = secrets.token_bytes(8)
+
+            kdf = PBKDF2HMAC(
+                algorithm=crypto_hashes.SHA256(),
+                length=32,
+                salt=salt,
+                iterations=310000,
+            )
+            aes_key = kdf.derive(key)
+
+            compressed = _zlib.compress(text.encode('utf-8'), level=6)
+
+            spec = [
+                base64.b64encode(iv).decode(),
+                base64.b64encode(salt).decode(),
+                310000, 256, 128, 'aes', 'gcm', 'zlib'
+            ]
+            adata = [spec, 'plaintext', 0, 0]
+            additional = json.dumps(adata, separators=(',', ':')).encode('utf-8')
+
+            aesgcm = AESGCM(aes_key)
+            ct_tag = aesgcm.encrypt(iv, compressed, additional)
+
+            payload = {
+                'v': 2,
+                'ct': base64.b64encode(ct_tag).decode(),
+                'adata': adata,
+                'meta': {'expire': expire}
+            }
+            resp = requests.post(
+                self.privatebin_url,
+                json=payload,
+                headers={
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'JSONHttpRequest',
+                },
+                timeout=8,
+            )
+            data = resp.json()
+            if data.get('status') != 0:
+                return self._error(data.get('message', 'Paste creation failed'))
+            paste_id = data['id']
+            key_b58 = self._base58_encode(key)
+            url = f"{self.privatebin_url}/?{paste_id}#{key_b58}"
+            return f"{self._header('Paste')} {COLOR_ACCENT}{url}{R}"
+        except Exception as e:
+            return self._error(f"Paste failed: {e}")
+
+    def add_tell(self, from_nick: str, to_nick: str, message: str) -> str:
+        """Store a tell message for delivery when to_nick next speaks."""
+        key = to_nick.lower()
+        if key not in self.tells:
+            self.tells[key] = []
+        # Limit 5 pending tells per target
+        if len(self.tells[key]) >= 5:
+            return self._error(f"Too many pending tells for {to_nick} (max 5)")
+        self.tells[key].append({
+            'from': from_nick,
+            'message': message,
+            'ts': int(time.time()),
+        })
+        self._save_tells()
+        return f"{self._header('Tell')} {COLOR_ACCENT}Message queued for {to_nick}.{R}"
+
+    def deliver_tells(self, nick: str, channel: str):
+        """Deliver any pending tells to nick in channel."""
+        key = nick.lower()
+        pending = self.tells.pop(key, None)
+        if not pending:
+            return
+        self._save_tells()
+        for tell in pending:
+            from_nick = tell['from']
+            message   = tell['message']
+            ts        = tell['ts']
+            ago       = int(time.time()) - ts
+            if ago < 60:
+                when = f"{ago}s ago"
+            elif ago < 3600:
+                when = f"{ago//60}m ago"
+            elif ago < 86400:
+                when = f"{ago//3600}h ago"
+            else:
+                when = f"{ago//86400}d ago"
+            self.send_message(channel,
+                f"{B}{C.CYAN}{nick}{R}: {COLOR_ACCENT}[tell from {from_nick}, {when}]{R} {message}")
+            time.sleep(0.4)
+
+    # ─── DNS / GeoIP ──────────────────────────────────────────────
+
+    def get_dns(self, hostname: str) -> str:
+        """Look up A and AAAA records for a hostname."""
+        results_a = []
+        results_aaaa = []
+
+        try:
+            infos = socket.getaddrinfo(hostname, None, socket.AF_INET)
+            seen = set()
+            for info in infos:
+                ip = info[4][0]
+                if ip not in seen:
+                    results_a.append(ip)
+                    seen.add(ip)
+        except socket.gaierror:
+            pass
+
+        try:
+            infos = socket.getaddrinfo(hostname, None, socket.AF_INET6)
+            seen = set()
+            for info in infos:
+                ip = info[4][0]
+                if ip not in seen:
+                    results_aaaa.append(ip)
+                    seen.add(ip)
+        except socket.gaierror:
+            pass
+
+        if not results_a and not results_aaaa:
+            return self._error(f"No DNS records found for {hostname}")
+
+        lines = [self._header(f"DNS: {hostname}")]
+        for ip in results_a:
+            lines.append(self._arrow_line(f"{B}{C.CYAN}A   {R} {COLOR_ACCENT}{ip}{R}"))
+        for ip in results_aaaa:
+            lines.append(self._arrow_line(f"{B}{C.YELLOW}AAAA{R} {COLOR_ACCENT}{ip}{R}"))
+        return "\n".join(lines)
+
+    def get_geo(self, query: str) -> str:
+        """Get geolocation info for an IP address or hostname."""
+        try:
+            url = f"http://ip-api.com/json/{urllib.parse.quote(query)}?fields=status,message,country,regionName,city,isp,as,query,lat,lon,timezone"
+            resp = requests.get(url, timeout=5)
+            data = resp.json()
+
+            if data.get('status') != 'success':
+                return self._error(data.get('message', 'Lookup failed'))
+
+            ip      = data.get('query', query)
+            city    = data.get('city', '?')
+            region  = data.get('regionName', '?')
+            country = data.get('country', '?')
+            isp     = data.get('isp', '?')
+            asn     = data.get('as', '?')
+            tz      = data.get('timezone', '?')
+            lat     = data.get('lat', '')
+            lon     = data.get('lon', '')
+
+            lines = [
+                self._header(f"GeoIP: {ip}"),
+                self._arrow_line(f"{B}{C.CYAN}Location{R} {COLOR_PRIMARY}|{R} {COLOR_ACCENT}{city}, {region}, {country}{R}"),
+                self._arrow_line(f"{B}{C.YELLOW}ISP{R}      {COLOR_PRIMARY}|{R} {COLOR_ACCENT}{isp}{R}"),
+                self._arrow_line(f"{B}{C.LIGHT_GREEN}ASN{R}      {COLOR_PRIMARY}|{R} {COLOR_ACCENT}{asn}{R}"),
+                self._arrow_line(f"{B}{C.ORANGE}Timezone{R} {COLOR_PRIMARY}|{R} {COLOR_ACCENT}{tz}{R}"),
+            ]
+            if lat and lon:
+                lines.append(self._arrow_line(f"{B}{C.LIGHT_BLUE}Coords{R}   {COLOR_PRIMARY}|{R} {COLOR_ACCENT}{lat}, {lon}{R}"))
+            return "\n".join(lines)
+        except Exception as e:
+            return self._error(f"GeoIP lookup failed: {e}")
+
     # ─── Command Handler ──────────────────────────────────────────
 
     def handle_command(self, channel: str, nick: str, hostmask: str, message: str):
@@ -1298,7 +1698,7 @@ class IRCBot:
             return
 
         # ── Weather ──
-        if command in (f"{p}weather", f"{p}w"):
+        if command in (f"{p}weather", f"{p}we"):
             if len(parts) < 2:
                 self.send_message(channel, self._error(f"Usage: {p}weather <location>"))
                 return
@@ -1492,6 +1892,135 @@ class IRCBot:
                 self.send_message(channel, line)
                 time.sleep(0.2)
 
+        # ── Title ──
+        elif command in (f"{p}title", f"{p}t"):
+            if len(parts) < 2:
+                self.send_message(channel, self._error(f"Usage: {p}title <url>"))
+                return
+            url_arg = Sanitizer.sanitize_irc_output(parts[1])
+            result = self.get_title(url_arg)
+            for line in result.split('\n'):
+                self.send_message(channel, line)
+                time.sleep(0.2)
+
+        # ── Define ──
+        elif command in (f"{p}define", f"{p}def"):
+            if len(parts) < 2:
+                self.send_message(channel, self._error(f"Usage: {p}define <word>"))
+                return
+            word = Sanitizer.sanitize_term(parts[1])
+            if not word:
+                self.send_message(channel, self._error("Invalid word"))
+                return
+            result = self.get_definition(word)
+            for line in result.split('\n'):
+                self.send_message(channel, line)
+                time.sleep(0.3)
+
+        # ── Wikipedia ──
+        elif command in (f"{p}wiki", f"{p}w"):
+            if len(parts) < 2:
+                self.send_message(channel, self._error(f"Usage: {p}wiki <topic>"))
+                return
+            topic = Sanitizer.sanitize_term(" ".join(parts[1:]))
+            if not topic:
+                self.send_message(channel, self._error("Invalid topic"))
+                return
+            result = self.get_wiki(topic)
+            for line in result.split('\n'):
+                self.send_message(channel, line)
+                time.sleep(0.3)
+
+        # ── Translate ──
+        elif command in (f"{p}tr", f"{p}translate"):
+            if len(parts) < 3:
+                self.send_message(channel, self._error(f"Usage: {p}tr <lang> <text>"))
+                return
+            lang = Sanitizer.sanitize_term(parts[1])
+            text_arg = Sanitizer.sanitize_term(" ".join(parts[2:]))
+            if not lang or not text_arg:
+                self.send_message(channel, self._error("Invalid language or text"))
+                return
+            result = self.get_translate(text_arg, lang)
+            for line in result.split('\n'):
+                self.send_message(channel, line)
+                time.sleep(0.2)
+
+        # ── Shorten ──
+        elif command in (f"{p}shorten", f"{p}short"):
+            if len(parts) < 2:
+                self.send_message(channel, self._error(f"Usage: {p}shorten <url>"))
+                return
+            url_arg = Sanitizer.sanitize_irc_output(parts[1])
+            result = self.get_shorten(url_arg)
+            for line in result.split('\n'):
+                self.send_message(channel, line)
+                time.sleep(0.2)
+
+        # ── Stock ──
+        elif command in (f"{p}stock", f"{p}stocks"):
+            if len(parts) < 2:
+                self.send_message(channel, self._error(f"Usage: {p}stock <ticker>"))
+                return
+            ticker = Sanitizer.sanitize_term(parts[1])
+            if not ticker:
+                self.send_message(channel, self._error("Invalid ticker"))
+                return
+            result = self.get_stock(ticker)
+            for line in result.split('\n'):
+                self.send_message(channel, line)
+                time.sleep(0.2)
+
+        # ── IsUp ──
+        elif command in (f"{p}isup", f"{p}up"):
+            if len(parts) < 2:
+                self.send_message(channel, self._error(f"Usage: {p}isup <host|url>"))
+                return
+            host_arg = Sanitizer.sanitize_irc_output(parts[1])
+            result = self.get_isup(host_arg)
+            for line in result.split('\n'):
+                self.send_message(channel, line)
+                time.sleep(0.2)
+
+        # ── Paste ──
+        elif command == f"{p}paste":
+            if len(parts) < 2:
+                self.send_message(channel, self._error(f"Usage: {p}paste <text>"))
+                return
+            paste_text = Sanitizer.sanitize_generic(" ".join(parts[1:]))
+            if not paste_text:
+                self.send_message(channel, self._error("Invalid or empty paste content"))
+                return
+            result = self.create_paste(paste_text)
+            for line in result.split('\n'):
+                self.send_message(channel, line)
+                time.sleep(0.2)
+
+        # ── Tell ──
+        elif command in (f"{p}tell", f"{p}remind"):
+            if len(parts) < 3:
+                self.send_message(channel, self._error(f"Usage: {p}tell <nick> <message>"))
+                return
+            to_nick = Sanitizer.sanitize_nick(parts[1])
+            msg_text = Sanitizer.sanitize_quote(" ".join(parts[2:]))
+            if not to_nick or not msg_text:
+                self.send_message(channel, self._error("Invalid nick or message"))
+                return
+            result = self.add_tell(nick, to_nick, msg_text)
+            self.send_message(channel, result)
+
+        # ── WHOIS ──
+        elif command == f"{p}whois":
+            if len(parts) < 2:
+                self.send_message(channel, self._error(f"Usage: {p}whois <nick>"))
+                return
+            target = Sanitizer.sanitize_nick(parts[1])
+            if not target:
+                self.send_message(channel, self._error("Invalid nick"))
+                return
+            self.pending_whois[target.lower()] = {'channel': channel, 'data': {}}
+            self.send_raw(f"WHOIS {target}")
+
         # ── HTTP Status ──
         elif command in (f"{p}http", f"{p}h"):
             if len(parts) < 2:
@@ -1508,14 +2037,44 @@ class IRCBot:
             else:
                 self.send_message(channel, self._error(f"Unknown HTTP status code: {code}"))
 
+        # ── DNS ──
+        elif command in (f"{p}dns", f"{p}nslookup"):
+            if len(parts) < 2:
+                self.send_message(channel, self._error(f"Usage: {p}dns <hostname>"))
+                return
+            hostname = Sanitizer.sanitize_hostname(parts[1])
+            if not hostname:
+                self.send_message(channel, self._error("Invalid hostname"))
+                return
+            result = self.get_dns(hostname)
+            for line in result.split('\n'):
+                self.send_message(channel, line)
+                time.sleep(0.2)
+
+        # ── GeoIP ──
+        elif command in (f"{p}geo", f"{p}geoip", f"{p}ip"):
+            if len(parts) < 2:
+                self.send_message(channel, self._error(f"Usage: {p}geo <ip|hostname>"))
+                return
+            hostname = Sanitizer.sanitize_hostname(parts[1])
+            if not hostname:
+                self.send_message(channel, self._error("Invalid IP or hostname"))
+                return
+            result = self.get_geo(hostname)
+            for line in result.split('\n'):
+                self.send_message(channel, line)
+                time.sleep(0.2)
+
         # ── Help ──
         elif command == f"{p}help":
             lines = [
                 self._header(f"le0 Bot Commands {BOX_SEP} Help Menu"),
-                f" {B}{C.CYAN}[Weather]{R}  {COLOR_ACCENT}{p}weather/w <loc>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}forecast/f <loc>{R}",
-                f" {B}{C.YELLOW}[Info]{R}     {COLOR_ACCENT}{p}urban/ud <term>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}time [loc]{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}http <code>{R}",
+                f" {B}{C.CYAN}[Weather]{R}  {COLOR_ACCENT}{p}weather/we <loc>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}forecast/f <loc>{R}",
+                f" {B}{C.YELLOW}[Info]{R}     {COLOR_ACCENT}{p}urban/ud <term>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}time [loc]{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}http <code>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}dns <host>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}geo <ip>{R}",
+                f" {B}{C.GREEN}[Net]{R}      {COLOR_ACCENT}{p}title/t <url>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}isup/up <host>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}shorten <url>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}stock <tick>{R}",
+                f" {B}{C.LIGHT_BLUE}[Lookup]{R}   {COLOR_ACCENT}{p}wiki/w <topic>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}define/def <word>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}tr <lang> <text>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}whois <nick>{R}",
                 f" {B}{C.CYAN}[Fun]{R}      {COLOR_ACCENT}{p}coin/flip{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}roll/dice [XdY]{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}8ball/8 <q>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}rps <r/p/s>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}fact{R}",
-                f" {B}{C.YELLOW}[Social]{R}   {COLOR_ACCENT}{p}quote{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}addquote <text>{R}",
+                f" {B}{C.YELLOW}[Social]{R}   {COLOR_ACCENT}{p}quote{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}addquote <text>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}tell <nick> <msg>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}paste <text>{R}",
                 f" {B}{C.LIGHT_GREEN}[Utility]{R}  {COLOR_ACCENT}{p}seen <nick>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}ping{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}uptime{R}",
                 f" {B}{C.ORANGE}[Tools]{R}    {COLOR_ACCENT}{p}calc <expr>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}hash <text>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}base64/b64 <e/d>{R}",
                 f" {B}{C.LIGHT_BLUE}[Text]{R}     {COLOR_ACCENT}{p}reverse <text>{R} {COLOR_PRIMARY}{BOX_SEP}{R} {COLOR_ACCENT}{p}mock <text>{R}",
@@ -1579,6 +2138,82 @@ class IRCBot:
                         self.send_raw(pong)
                         continue
 
+                    # ── WHOIS numeric replies ──
+                    whois_m = re.match(r':\S+ (\d{3}) \S+ (\S+) (.+)', line)
+                    if whois_m:
+                        numeric = whois_m.group(1)
+                        target_nick = whois_m.group(2).lower()
+                        rest = whois_m.group(3).lstrip(':')
+                        if target_nick in self.pending_whois:
+                            d = self.pending_whois[target_nick]['data']
+                            if numeric == '311':
+                                # :server 311 me nick user host * :realname
+                                parts311 = rest.split(None, 3)
+                                if len(parts311) >= 4:
+                                    d['user'] = parts311[0]
+                                    d['host'] = parts311[1]
+                                    d['realname'] = parts311[3].lstrip(':')
+                            elif numeric == '312':
+                                parts312 = rest.split(None, 1)
+                                d['server'] = parts312[0]
+                            elif numeric == '317':
+                                parts317 = rest.split()
+                                if parts317:
+                                    try:
+                                        idle = int(parts317[0])
+                                        h, m, s = idle // 3600, (idle % 3600) // 60, idle % 60
+                                        d['idle'] = f"{h}h {m}m {s}s" if h else (f"{m}m {s}s" if m else f"{s}s")
+                                    except ValueError:
+                                        pass
+                            elif numeric == '319':
+                                d['channels'] = rest.lstrip(':').strip()
+                            elif numeric == '330':
+                                parts330 = rest.split(None, 1)
+                                d['account'] = parts330[0]
+                            elif numeric == '671':
+                                d['secure'] = True
+                            elif numeric == '301':
+                                d['away'] = rest.lstrip(':')
+                            elif numeric == '318':
+                                # End of WHOIS — format and send
+                                info = self.pending_whois.pop(target_nick)
+                                ch  = info['channel']
+                                dat = info['data']
+                                nick_disp = target_nick
+                                lines_w = [self._header(f"WHOIS: {nick_disp}")]
+                                if 'realname' in dat:
+                                    lines_w.append(self._arrow_line(
+                                        f"{B}{C.CYAN}User{R}     {COLOR_PRIMARY}|{R} {COLOR_ACCENT}{dat.get('user','?')}@{dat.get('host','?')}{R}"
+                                        f"  ({dat['realname']})"
+                                    ))
+                                if 'server' in dat:
+                                    lines_w.append(self._arrow_line(
+                                        f"{B}{C.YELLOW}Server{R}   {COLOR_PRIMARY}|{R} {COLOR_ACCENT}{dat['server']}{R}"
+                                    ))
+                                if 'account' in dat:
+                                    lines_w.append(self._arrow_line(
+                                        f"{B}{C.LIGHT_GREEN}Account{R}  {COLOR_PRIMARY}|{R} {COLOR_ACCENT}{dat['account']}{R}"
+                                    ))
+                                if 'idle' in dat:
+                                    lines_w.append(self._arrow_line(
+                                        f"{B}{C.ORANGE}Idle{R}     {COLOR_PRIMARY}|{R} {COLOR_ACCENT}{dat['idle']}{R}"
+                                    ))
+                                if 'channels' in dat:
+                                    lines_w.append(self._arrow_line(
+                                        f"{B}{C.LIGHT_BLUE}Channels{R} {COLOR_PRIMARY}|{R} {COLOR_ACCENT}{dat['channels']}{R}"
+                                    ))
+                                if dat.get('secure'):
+                                    lines_w.append(self._arrow_line(
+                                        f"{B}{C.LIGHT_GREEN}TLS{R}      {COLOR_PRIMARY}|{R} {COLOR_ACCENT}Secure connection{R}"
+                                    ))
+                                if 'away' in dat:
+                                    lines_w.append(self._arrow_line(
+                                        f"{B}{C.GREY}Away{R}     {COLOR_PRIMARY}|{R} {COLOR_ACCENT}{dat['away']}{R}"
+                                    ))
+                                for wl in lines_w:
+                                    self.send_message(ch, wl)
+                                    time.sleep(0.2)
+
                     # Parse messages: :nick!user@host PRIVMSG #channel :message
                     match = re.match(r':(.+?)!(.+?) PRIVMSG (.+?) :(.+)', line)
 
@@ -1594,9 +2229,13 @@ class IRCBot:
 
                         self.track_seen(nick, channel, message)
 
-                        # Auto-reply to duck hunt (CloudBot/Sopel duck plugin)
-                        # Duck appearance: "・゜゜・。。・ ゜゜\_ó< quack!"
-                        if re.search(r'\\_[^\s]*<', message) and 'quack' in message.lower():
+                        # Deliver pending tells
+                        self.deliver_tells(nick, channel)
+
+                        # Auto-reply to duck hunt (Sopel/CloudBot duck plugin)
+                        # Strip IRC formatting before pattern matching
+                        clean_msg = re.sub(r'\x03\d{0,2}(,\d{0,2})?|\x02|\x1d|\x1f|\x0f|\x16', '', message)
+                        if re.search(r'\\[_^][^\s]*<', clean_msg) and 'quack' in clean_msg.lower():
                             delay = random.uniform(2, 8)
                             time.sleep(delay)
                             action = random.choice(['bang', 'bef'])
@@ -1653,7 +2292,7 @@ if __name__ == "__main__":
     ╠═══════════════════════════════════════╣
     """)
     p = bot.command_prefix
-    print(f"    ║  Weather  │ {p}weather/w  {p}forecast/f    ║")
+    print(f"    ║  Weather  │ {p}weather/we  {p}forecast/f   ║")
     print(f"    ║  Info     │ {p}urban/ud   {p}time          ║")
     print(f"    ║  Fun      │ {p}coin  {p}roll  {p}8ball  {p}rps ║")
     print(f"    ║  Social   │ {p}quote  {p}addquote          ║")
