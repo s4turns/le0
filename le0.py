@@ -1578,15 +1578,20 @@ class IRCBot:
             if desc:
                 words = desc.split()
                 cur = ""
+                desc_lines = []
                 for w in words:
+                    if len(desc_lines) >= 4:
+                        break
                     if len(cur) + len(w) + 1 <= 80:
                         cur += w + " "
                     else:
                         if cur:
-                            lines.append(self._arrow_line(f"{COLOR_ACCENT}{cur.rstrip()}{R}"))
+                            desc_lines.append(cur.rstrip())
                         cur = w + " "
-                if cur:
-                    lines.append(self._arrow_line(f"{COLOR_ACCENT}{cur.rstrip()}{R}"))
+                if cur and len(desc_lines) < 4:
+                    desc_lines.append(cur.rstrip())
+                for dl in desc_lines:
+                    lines.append(self._arrow_line(f"{COLOR_ACCENT}{dl}{R}"))
             lines.append(self._arrow_line(
                 f"{self._label('URL')}: {COLOR_VALUE}https://nvd.nist.gov/vuln/detail/{cid}{R}"
             ))
