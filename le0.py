@@ -1617,6 +1617,8 @@ class IRCBot:
             data = resp.json()
             if not data:
                 return [self._info("No recent CVEs available.")]
+            print(f"[CVE] first entry keys: {list(data[0].keys()) if data else 'empty'}")
+            print(f"[CVE] first entry sample: {data[0]}")
 
             # Sort by CVSS score descending, filter to those with a score
             scored = [(e, float(e['cvss'])) for e in data if e.get('cvss')]
