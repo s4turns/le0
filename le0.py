@@ -16,6 +16,7 @@ import sys
 import importlib
 import fnmatch
 import json
+import datetime
 import requests
 from typing import Optional
 
@@ -289,6 +290,9 @@ class IRCBot:
         self.tells = {}
         self.tells_file = os.path.join(_base, 'tells.json')
         self._load_tells()
+
+        # Daily CVE post tracker: stores date string 'YYYY-MM-DD' of last post
+        self._last_vuln_post = None
 
 
     # ─── Enhanced formatting helpers ───────────────────────────────
@@ -1512,6 +1516,147 @@ class IRCBot:
         except Exception as e:
             return self._error(f"GeoIP lookup failed: {e}")
 
+    # ─── Vulnerability / CVE ─────────────────────────────────────────
+
+    def _cvss_color(self, score: float) -> str:
+        if score >= 9.0:
+            return COLOR_ERROR
+        elif score >= 7.0:
+            return COLOR_WARNING
+        elif score >= 4.0:
+            return COLOR_INFO
+        return COLOR_SUCCESS
+
+    def _parse_cve_entry(self, cve: dict):
+        """Extract (id, score, severity, vector, published, desc) from NVD cve object."""
+        cve_id = cve.get('id', '')
+        published = cve.get('published', '')[:10]
+        desc = ''
+        for d in cve.get('descriptions', []):
+            if d.get('lang') == 'en':
+                desc = d.get('value', '')
+                break
+        score = None
+        severity = ''
+        vector = ''
+        metrics = cve.get('metrics', {})
+        for key in ('cvssMetricV31', 'cvssMetricV30', 'cvssMetricV2'):
+            if key in metrics and metrics[key]:
+                m = metrics[key][0]
+                cd = m.get('cvssData', {})
+                score = cd.get('baseScore')
+                severity = cd.get('baseSeverity') or m.get('baseSeverity', '')
+                vector = cd.get('vectorString', '')
+                break
+        return cve_id, score, severity, vector, published, desc
+
+    def get_cve(self, cve_id: str) -> list:
+        """Look up a specific CVE by ID via CIRCL CVE Search API."""
+        try:
+            cve_id = cve_id.upper()
+            if not re.match(r'^CVE-\d{4}-\d+$', cve_id):
+                return [self._error("Invalid CVE ID (use: CVE-2024-12345)")]
+            url = f"https://cve.circl.lu/api/cve/{cve_id}"
+            print(f"[CVE] GET {url}")
+            resp = requests.get(url, timeout=8, headers={'User-Agent': 'le0-irc-bot/1.0'})
+            print(f"[CVE] HTTP {resp.status_code}")
+            if resp.status_code == 404:
+                return [self._error(f"{cve_id} not found")]
+            data = resp.json()
+            if not data:
+                return [self._error(f"{cve_id} not found")]
+            cid = data.get('id', cve_id)
+            summary = data.get('summary', '')
+            published = (data.get('Published') or '')[:10]
+            score = data.get('cvss')
+            vector = data.get('cvssVector', '')
+            if score is not None:
+                score = float(score)
+                sc = self._cvss_color(score)
+                score_text = f"{B}{sc}{score}{R}"
+            else:
+                score_text = f"{COLOR_VALUE}N/A{R}"
+            lines = [self._header(f"CVE: {cid}")]
+            lines.append(self._arrow_line(
+                f"{self._label('CVSS')}: {score_text}  "
+                f"{self._label('Published')}: {COLOR_VALUE}{published}{R}"
+            ))
+            if summary:
+                words = summary.split()
+                cur = ""
+                wrapped = []
+                for w in words:
+                    if len(cur) + len(w) + 1 <= 90:
+                        cur += w + " "
+                    else:
+                        if cur:
+                            wrapped.append(cur.rstrip())
+                        cur = w + " "
+                if cur:
+                    wrapped.append(cur.rstrip())
+                for dl in wrapped[:4]:
+                    lines.append(self._arrow_line(f"{COLOR_ACCENT}{dl}{R}"))
+            if vector:
+                lines.append(self._arrow_line(f"{self._label('Vector')}: {COLOR_VALUE}{vector}{R}"))
+            lines.append(self._arrow_line(
+                f"{self._label('URL')}: {COLOR_VALUE}https://nvd.nist.gov/vuln/detail/{cid}{R}"
+            ))
+            return lines
+        except requests.exceptions.Timeout:
+            return [self._error("CVE lookup timed out")]
+        except Exception as e:
+            return [self._error(f"CVE lookup failed: {e}")]
+
+    def get_top_vulns(self, count: int = 5) -> list:
+        """Fetch recent CVEs via CIRCL CVE Search API (last N entries)."""
+        try:
+            url = f"https://cve.circl.lu/api/last/{count * 3}"
+            print(f"[CVE] GET {url}")
+            resp = requests.get(url, timeout=8, headers={'User-Agent': 'le0-irc-bot/1.0'})
+            print(f"[CVE] HTTP {resp.status_code}")
+            data = resp.json()
+            if not data:
+                return [self._info("No recent CVEs available.")]
+
+            # Sort by CVSS score descending, filter to those with a score
+            scored = [(e, float(e['cvss'])) for e in data if e.get('cvss')]
+            scored.sort(key=lambda x: x[1], reverse=True)
+            top = scored[:count] if scored else [(e, 0.0) for e in data[:count]]
+
+            lines = [self._header(f"Top CVEs (recent) {BOX_SEP} {B}{COLOR_ERROR}CVSS Ranked{R}")]
+            for entry, score_val in top:
+                cid = entry.get('id', '?')
+                published = (entry.get('Published') or '')[:10]
+                summary = entry.get('summary', '')
+                short = (summary[:110] + '...') if len(summary) > 110 else summary
+                sc = self._cvss_color(score_val)
+                lines.append(self._arrow_line(
+                    f"{B}{sc}{cid}{R} {B}{sc}[{score_val}]{R} "
+                    f"{COLOR_VALUE}{published}{R} {COLOR_ACCENT}{short}{R}"
+                ))
+            return lines
+        except requests.exceptions.Timeout:
+            return [self._error("CVE feed timed out")]
+        except Exception as e:
+            return [self._error(f"CVE feed failed: {e}")]
+
+    def _check_scheduled_tasks(self):
+        """Fire time-based scheduled tasks (daily CVE post at 12pm CST = UTC-6)."""
+        cst_now = datetime.datetime.utcnow() - datetime.timedelta(hours=6)
+        if cst_now.hour == 12:
+            today = cst_now.strftime('%Y-%m-%d')
+            if self._last_vuln_post != today:
+                self._last_vuln_post = today
+                self._post_daily_vulns()
+
+    def _post_daily_vulns(self):
+        """Post daily top CVE digest to all channels."""
+        lines = self.get_top_vulns(5)
+        for channel in self.channels:
+            for line in lines:
+                self.send_message(channel, line)
+                time.sleep(0.5)
+
     # ─── Command Handler ──────────────────────────────────────────
 
     def handle_command(self, channel: str, nick: str, hostmask: str, message: str):
@@ -1522,6 +1667,7 @@ class IRCBot:
 
         command = parts[0].lower()
         p = self.command_prefix
+        print(f"[CMD] {nick} in {channel}: {command}")
 
         # ── Admin (bypasses rate limit) ──
         if self._is_admin(hostmask):
@@ -1926,6 +2072,28 @@ class IRCBot:
                 self.send_message(channel, line)
                 time.sleep(0.2)
 
+        # ── CVE / Vulns ──
+        elif command in (f"{p}cve",):
+            if len(parts) < 2:
+                self.send_message(channel, self._error(f"Usage: {p}cve <CVE-ID>  (e.g. {p}cve CVE-2024-1234)"))
+                return
+            cve_id = Sanitizer.sanitize_term(parts[1])
+            if not cve_id:
+                self.send_message(channel, self._error("Invalid CVE ID"))
+                return
+            self.send_message(channel, self._info(f"Looking up {cve_id.upper()}..."))
+            result = self.get_cve(cve_id)
+            for line in result:
+                self.send_message(channel, line)
+                time.sleep(0.3)
+
+        elif command in (f"{p}vulns", f"{p}cves"):
+            self.send_message(channel, self._info("Fetching top CVEs from NVD..."))
+            result = self.get_top_vulns(5)
+            for line in result:
+                self.send_message(channel, line)
+                time.sleep(0.3)
+
         # ── Help ──
         elif command == f"{p}help":
             dot = f" {COLOR_PRIMARY}·{R} "
@@ -1935,6 +2103,7 @@ class IRCBot:
                 f" {B}{C.YELLOW}Info{R}      {COLOR_ACCENT}{p}urban/ud <term>{R}{dot}{COLOR_ACCENT}{p}time [loc]{R}{dot}{COLOR_ACCENT}{p}http <code>{R}{dot}{COLOR_ACCENT}{p}dns <host>{R}{dot}{COLOR_ACCENT}{p}geo <ip>{R}",
                 f" {B}{C.GREEN}Net{R}       {COLOR_ACCENT}{p}title/t <url>{R}{dot}{COLOR_ACCENT}{p}isup/up <host>{R}{dot}{COLOR_ACCENT}{p}shorten <url>{R}{dot}{COLOR_ACCENT}{p}stock <tick>{R}",
                 f" {B}{C.LIGHT_BLUE}Lookup{R}    {COLOR_ACCENT}{p}define/def <word>{R}{dot}{COLOR_ACCENT}{p}tr <lang> <text>{R}{dot}{COLOR_ACCENT}{p}whois <nick>{R}",
+                f" {B}{C.RED}Security{R}  {COLOR_ACCENT}{p}cve <CVE-ID>{R}{dot}{COLOR_ACCENT}{p}vulns/cves{R}",
                 f" {B}{C.CYAN}Fun{R}       {COLOR_ACCENT}{p}coin/flip{R}{dot}{COLOR_ACCENT}{p}roll/dice [XdY]{R}{dot}{COLOR_ACCENT}{p}8ball/8 <q>{R}{dot}{COLOR_ACCENT}{p}rps <r/p/s>{R}{dot}{COLOR_ACCENT}{p}fact{R}",
                 f" {B}{C.YELLOW}Social{R}    {COLOR_ACCENT}{p}quote{R}{dot}{COLOR_ACCENT}{p}addquote <text>{R}{dot}{COLOR_ACCENT}{p}tell <nick> <msg>{R}",
                 f" {B}{C.LIGHT_GREEN}Utility{R}   {COLOR_ACCENT}{p}seen <nick>{R}{dot}{COLOR_ACCENT}{p}ping{R}{dot}{COLOR_ACCENT}{p}uptime{R}",
@@ -1986,9 +2155,16 @@ class IRCBot:
 
         buffer = ""
 
+        # Allow the recv loop to time out so scheduled tasks can run
+        self.irc.settimeout(30)
+
         while True:
             try:
-                buffer += self.irc.recv(2048).decode("UTF-8", errors="ignore")
+                self._check_scheduled_tasks()
+                data = self.irc.recv(2048)
+                if not data:
+                    raise ConnectionError("Server closed connection")
+                buffer += data.decode("UTF-8", errors="ignore")
                 lines = buffer.split("\r\n")
                 buffer = lines.pop()
 
@@ -2106,6 +2282,8 @@ class IRCBot:
                         if message.startswith(self.command_prefix):
                             self.handle_command(channel, nick, hostmask, message)
 
+            except socket.timeout:
+                continue  # normal — just lets _check_scheduled_tasks fire
             except KeyboardInterrupt:
                 print("\nShutting down...")
                 self.send_raw("QUIT :le0 shutting down")
