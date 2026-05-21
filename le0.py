@@ -291,8 +291,13 @@ class IRCBot:
         self.tells_file = os.path.join(_base, 'tells.json')
         self._load_tells()
 
-        # Daily CVE post tracker: stores date string 'YYYY-MM-DD' of last post
-        self._last_vuln_post = None
+        # Daily CVE post tracker — pre-set to today if already past noon CST so
+        # a restart during the noon hour doesn't re-flood the channel.
+        _cst_now = datetime.datetime.utcnow() - datetime.timedelta(hours=6)
+        if _cst_now.hour >= 12:
+            self._last_vuln_post = _cst_now.strftime('%Y-%m-%d')
+        else:
+            self._last_vuln_post = None
 
 
     # ─── Enhanced formatting helpers ───────────────────────────────
@@ -1527,28 +1532,36 @@ class IRCBot:
             return COLOR_INFO
         return COLOR_SUCCESS
 
-    def _parse_cve_entry(self, cve: dict):
-        """Extract (id, score, severity, vector, published, desc) from NVD cve object."""
-        cve_id = cve.get('id', '')
-        published = cve.get('published', '')[:10]
-        desc = ''
-        for d in cve.get('descriptions', []):
-            if d.get('lang') == 'en':
-                desc = d.get('value', '')
+    def _parse_circl_entry(self, entry: dict):
+        """Extract (cve_id, score, severity, published, desc) from CIRCL CVE 5.0 format."""
+        meta = entry.get('cveMetadata', {})
+        cve_id = meta.get('cveId', '?')
+        published = (meta.get('datePublished') or meta.get('dateReserved') or '')[:10]
+        cna = entry.get('containers', {}).get('cna', {})
+        desc = cna.get('title', '')
+        for d in cna.get('descriptions', []):
+            if d.get('lang', '').startswith('en'):
+                desc = d.get('value', '') or desc
                 break
         score = None
         severity = ''
-        vector = ''
-        metrics = cve.get('metrics', {})
-        for key in ('cvssMetricV31', 'cvssMetricV30', 'cvssMetricV2'):
-            if key in metrics and metrics[key]:
-                m = metrics[key][0]
-                cd = m.get('cvssData', {})
-                score = cd.get('baseScore')
-                severity = cd.get('baseSeverity') or m.get('baseSeverity', '')
-                vector = cd.get('vectorString', '')
+        # Search cna then adp containers for any CVSS metric
+        containers = [cna] + entry.get('containers', {}).get('adp', [])
+        for container in containers:
+            for metric in container.get('metrics', []):
+                for key in ('cvssV4_0', 'cvssV3_1', 'cvssV3_0', 'cvssV2_0'):
+                    if key in metric:
+                        m = metric[key]
+                        s = m.get('baseScore')
+                        if s is not None and float(s) > 0:
+                            score = float(s)
+                            severity = m.get('baseSeverity', '')
+                            break
+                if score is not None:
+                    break
+            if score is not None:
                 break
-        return cve_id, score, severity, vector, published, desc
+        return cve_id, score, severity, published, desc
 
     def get_cve(self, cve_id: str) -> list:
         """Look up a specific CVE by ID via CIRCL CVE Search API."""
@@ -1557,23 +1570,16 @@ class IRCBot:
             if not re.match(r'^CVE-\d{4}-\d+$', cve_id):
                 return [self._error("Invalid CVE ID (use: CVE-2024-12345)")]
             url = f"https://cve.circl.lu/api/cve/{cve_id}"
-            print(f"[CVE] GET {url}")
             resp = requests.get(url, timeout=8, headers={'User-Agent': 'le0-irc-bot/1.0'})
-            print(f"[CVE] HTTP {resp.status_code}")
             if resp.status_code == 404:
                 return [self._error(f"{cve_id} not found")]
             data = resp.json()
             if not data:
                 return [self._error(f"{cve_id} not found")]
-            cid = data.get('id', cve_id)
-            summary = data.get('summary', '')
-            published = (data.get('Published') or '')[:10]
-            score = data.get('cvss')
-            vector = data.get('cvssVector', '')
+            cid, score, severity, published, desc = self._parse_circl_entry(data)
             if score is not None:
-                score = float(score)
                 sc = self._cvss_color(score)
-                score_text = f"{B}{sc}{score}{R}"
+                score_text = f"{B}{sc}{score}{R}  {B}{sc}{severity}{R}"
             else:
                 score_text = f"{COLOR_VALUE}N/A{R}"
             lines = [self._header(f"CVE: {cid}")]
@@ -1581,8 +1587,8 @@ class IRCBot:
                 f"{self._label('CVSS')}: {score_text}  "
                 f"{self._label('Published')}: {COLOR_VALUE}{published}{R}"
             ))
-            if summary:
-                words = summary.split()
+            if desc:
+                words = desc.split()
                 cur = ""
                 wrapped = []
                 for w in words:
@@ -1596,8 +1602,6 @@ class IRCBot:
                     wrapped.append(cur.rstrip())
                 for dl in wrapped[:4]:
                     lines.append(self._arrow_line(f"{COLOR_ACCENT}{dl}{R}"))
-            if vector:
-                lines.append(self._arrow_line(f"{self._label('Vector')}: {COLOR_VALUE}{vector}{R}"))
             lines.append(self._arrow_line(
                 f"{self._label('URL')}: {COLOR_VALUE}https://nvd.nist.gov/vuln/detail/{cid}{R}"
             ))
@@ -1608,31 +1612,24 @@ class IRCBot:
             return [self._error(f"CVE lookup failed: {e}")]
 
     def get_top_vulns(self, count: int = 5) -> list:
-        """Fetch recent CVEs via CIRCL CVE Search API (last N entries)."""
+        """Fetch recent CVEs via CIRCL CVE Search API, ranked by CVSS score."""
         try:
-            url = f"https://cve.circl.lu/api/last/{count * 3}"
-            print(f"[CVE] GET {url}")
+            url = f"https://cve.circl.lu/api/last/{count * 4}"
             resp = requests.get(url, timeout=8, headers={'User-Agent': 'le0-irc-bot/1.0'})
-            print(f"[CVE] HTTP {resp.status_code}")
             data = resp.json()
             if not data:
                 return [self._info("No recent CVEs available.")]
-            first = data[0]
-            keys = list(first.keys())
-            return [
-                self._info(f"DEBUG keys: {keys}"),
-                self._info(f"DEBUG sample: {str(first)[:300]}"),
-            ]
+
+            parsed = [self._parse_circl_entry(e) for e in data]
+            scored = [(p, p[1]) for p in parsed if p[1] is not None]
             scored.sort(key=lambda x: x[1], reverse=True)
-            top = scored[:count] if scored else [(e, 0.0) for e in data[:count]]
+            top = scored[:count] if scored else [(p, 0.0) for p in parsed[:count]]
 
             lines = [self._header(f"Top CVEs (recent) {BOX_SEP} {B}{COLOR_ERROR}CVSS Ranked{R}")]
-            for entry, score_val in top:
-                cid = entry.get('id', '?')
-                published = (entry.get('Published') or '')[:10]
-                summary = entry.get('summary', '')
-                short = (summary[:110] + '...') if len(summary) > 110 else summary
+            for (cid, score, severity, published, desc), score_val in top:
+                score_val = score_val or 0.0
                 sc = self._cvss_color(score_val)
+                short = (desc[:110] + '...') if len(desc) > 110 else desc
                 lines.append(self._arrow_line(
                     f"{B}{sc}{cid}{R} {B}{sc}[{score_val}]{R} "
                     f"{COLOR_VALUE}{published}{R} {COLOR_ACCENT}{short}{R}"
