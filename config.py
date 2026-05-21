@@ -4,7 +4,7 @@
 SERVER = "irc.blcknd.network"
 PORT = 6697                     # 6697 for SSL, 6667 for non-SSL
 NICKNAME = "le0"
-CHANNELS = ["#d0m3r", "#blcknd"]
+CHANNELS = ["#d0m3r", "#blcknd", "#security"]
 COMMAND_PREFIX = "%"
 
 # Admin hostmasks (nick!user@host format, wildcards supported)
