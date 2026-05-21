@@ -1629,24 +1629,10 @@ class IRCBot:
             for (cid, score, severity, published, desc), score_val in top:
                 score_val = score_val or 0.0
                 sc = self._cvss_color(score_val)
+                short = (desc[:110] + '...') if len(desc) > 110 else desc
                 lines.append(self._arrow_line(
-                    f"{B}{sc}{cid}{R} {B}{sc}[{score_val}]{R}  "
-                    f"{self._label('Published')}: {COLOR_VALUE}{published}{R}"
-                ))
-                if desc:
-                    words = desc.split()
-                    cur = ""
-                    for w in words:
-                        if len(cur) + len(w) + 1 <= 90:
-                            cur += w + " "
-                        else:
-                            if cur:
-                                lines.append(self._arrow_line(f"  {COLOR_ACCENT}{cur.rstrip()}{R}"))
-                            cur = w + " "
-                    if cur:
-                        lines.append(self._arrow_line(f"  {COLOR_ACCENT}{cur.rstrip()}{R}"))
-                lines.append(self._arrow_line(
-                    f"  {self._label('URL')}: {COLOR_VALUE}https://nvd.nist.gov/vuln/detail/{cid}{R}"
+                    f"{B}{sc}{cid}{R} {B}{sc}[{score_val}]{R} "
+                    f"{COLOR_VALUE}{published}{R} {COLOR_ACCENT}{short}{R}"
                 ))
             return lines
         except requests.exceptions.Timeout:
