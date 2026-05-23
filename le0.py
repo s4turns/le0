@@ -17,6 +17,7 @@ import importlib
 import fnmatch
 import json
 import datetime
+import threading
 import requests
 from typing import Optional
 
@@ -1652,12 +1653,20 @@ class IRCBot:
                 self._post_daily_vulns()
 
     def _post_daily_vulns(self):
-        """Post daily top CVE digest to all channels."""
-        lines = self.get_top_vulns(5)
-        for channel in self.channels:
-            for line in lines:
-                self.send_message(channel, line)
-                time.sleep(0.5)
+        """Kick off the daily CVE digest in a background thread so recv loop isn't blocked."""
+        t = threading.Thread(target=self._daily_vulns_worker, daemon=True)
+        t.start()
+
+    def _daily_vulns_worker(self):
+        """Background worker: fetch and post daily CVE digest to all channels."""
+        try:
+            lines = self.get_top_vulns(5)
+            for channel in self.channels:
+                for line in lines:
+                    self.send_message(channel, line)
+                    time.sleep(0.5)
+        except Exception as e:
+            print(f"[CVE daily] post failed: {e}")
 
     # ─── Command Handler ──────────────────────────────────────────
 
