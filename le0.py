@@ -1562,6 +1562,29 @@ class IRCBot:
                 break
         return cve_id, score, severity, published, desc
 
+    def _nvd_get(self, url: str, retries: int = 3, delay: int = 10) -> dict:
+        """GET a NVD API URL with retries on empty/bad responses."""
+        last_err = None
+        for attempt in range(1, retries + 1):
+            try:
+                resp = requests.get(url, timeout=12, headers=self._nvd_headers())
+                print(f"[NVD] HTTP {resp.status_code} — {url[:80]}")
+                if resp.status_code == 429:
+                    print(f"[NVD] rate limited, waiting {delay}s (attempt {attempt}/{retries})")
+                    time.sleep(delay)
+                    continue
+                if not resp.text.strip():
+                    print(f"[NVD] empty response (attempt {attempt}/{retries}), retrying in {delay}s")
+                    time.sleep(delay)
+                    continue
+                return resp.json()
+            except Exception as e:
+                last_err = e
+                print(f"[NVD] request failed (attempt {attempt}/{retries}): {e}")
+                if attempt < retries:
+                    time.sleep(delay)
+        raise ConnectionError(last_err or "NVD returned empty response after retries")
+
     def get_cve(self, cve_id: str) -> list:
         """Look up a specific CVE by ID via NVD API."""
         try:
@@ -1569,8 +1592,7 @@ class IRCBot:
             if not re.match(r'^CVE-\d{4}-\d+$', cve_id):
                 return [self._error("Invalid CVE ID (use: CVE-2024-12345)")]
             url = f"https://services.nvd.nist.gov/rest/json/cves/2.0?cveId={cve_id}"
-            resp = requests.get(url, timeout=12, headers=self._nvd_headers())
-            data = resp.json()
+            data = self._nvd_get(url)
             vulns = data.get('vulnerabilities', [])
             if not vulns:
                 return [self._error(f"{cve_id} not found in NVD")]
@@ -1606,8 +1628,6 @@ class IRCBot:
                 f"{self._label('URL')}: {COLOR_VALUE}https://nvd.nist.gov/vuln/detail/{cid}{R}"
             ))
             return lines
-        except requests.exceptions.Timeout:
-            return [self._error("NVD API timed out")]
         except Exception as e:
             return [self._error(f"CVE lookup failed: {e}")]
 
@@ -1622,8 +1642,7 @@ class IRCBot:
                 f"?pubStartDate={start.strftime(fmt)}&pubEndDate={now.strftime(fmt)}"
                 "&resultsPerPage=50"
             )
-            resp = requests.get(url, timeout=12, headers=self._nvd_headers())
-            data = resp.json()
+            data = self._nvd_get(url)
             vulns = data.get('vulnerabilities', [])
             if not vulns:
                 return [self._info("No new CVEs in the last 7 days.")]
@@ -1644,8 +1663,6 @@ class IRCBot:
                     f"{COLOR_VALUE}{published}{R} {COLOR_ACCENT}{short}{R}"
                 ))
             return lines
-        except requests.exceptions.Timeout:
-            return [self._error("CVE feed timed out")]
         except Exception as e:
             return [self._error(f"CVE feed failed: {e}")]
 
