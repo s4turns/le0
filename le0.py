@@ -212,6 +212,7 @@ class IRCBot:
         self.sasl_password = sasl_password
         self.admins = admins or []
         self.nvd_api_key = nvd_api_key
+        self._nvd_key_active = False          # set True by _check_nvd_key() once verified
         self.irc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.start_time = time.time()
 
@@ -2160,7 +2161,8 @@ class IRCBot:
     def run(self):
         """Main bot loop."""
         self.connect()
-        self._check_nvd_key()
+        # Check NVD key in background so startup isn't blocked by an 8s timeout
+        threading.Thread(target=self._check_nvd_key, daemon=True).start()
 
         buffer = ""
         connected = False
