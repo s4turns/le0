@@ -1631,8 +1631,8 @@ class IRCBot:
         except Exception as e:
             return [self._error(f"CVE lookup failed: {e}")]
 
-    def get_top_vulns(self, count: int = 5) -> list:
-        """Fetch recent high/critical CVEs from NVD (last 7 days, sorted by score)."""
+    def get_latest_cves(self, count: int = 5) -> list:
+        """Fetch the most recently published CVEs from NVD (7-day window, newest first)."""
         try:
             now = datetime.datetime.utcnow()
             start = now - datetime.timedelta(days=7)
@@ -1640,30 +1640,27 @@ class IRCBot:
             url = (
                 "https://services.nvd.nist.gov/rest/json/cves/2.0"
                 f"?pubStartDate={start.strftime(fmt)}&pubEndDate={now.strftime(fmt)}"
-                "&cvssV3Severity=CRITICAL"
+                "&resultsPerPage=50"
             )
             resp = requests.get(url, timeout=12, headers=self._nvd_headers())
             data = resp.json()
             vulns = data.get('vulnerabilities', [])
             if not vulns:
-                url = url.replace('CRITICAL', 'HIGH')
-                resp = requests.get(url, timeout=12, headers=self._nvd_headers())
-                data = resp.json()
-                vulns = data.get('vulnerabilities', [])
-            if not vulns:
-                return [self._info("No high/critical CVEs in the last 7 days.")]
-            parsed = [self._nvd_extract(v['cve']) for v in vulns]
-            parsed.sort(key=lambda x: x[1] or 0, reverse=True)
+                return [self._info("No new CVEs in the last 7 days.")]
+            # Sort newest-published first
+            vulns.sort(key=lambda v: v['cve'].get('published', ''), reverse=True)
             total = data.get('totalResults', len(vulns))
             lines = [self._header(
-                f"Top CVEs (7d) {BOX_SEP} {B}{COLOR_ERROR}CRITICAL{R}{COLOR_PRIMARY} {BOX_SEP} {COLOR_VALUE}{total} found{R}"
+                f"Latest CVEs {BOX_SEP} {B}{COLOR_INFO}7d{R}{COLOR_PRIMARY} {BOX_SEP} {COLOR_VALUE}{total} published{R}"
             )]
-            for cid, score, severity, published, desc in parsed[:count]:
-                score_val = score or 0.0
+            for v in vulns[:count]:
+                cid, score, severity, published, desc = self._nvd_extract(v['cve'])
+                score_val = score if score is not None else 0.0
                 sc = self._cvss_color(score_val)
+                score_str = f"[{score_val}]" if score is not None else "[N/A]"
                 short = (desc[:110] + '...') if len(desc) > 110 else desc
                 lines.append(self._arrow_line(
-                    f"{B}{sc}{cid}{R} {B}{sc}[{score_val}]{R} "
+                    f"{B}{sc}{cid}{R} {B}{sc}{score_str}{R} "
                     f"{COLOR_VALUE}{published}{R} {COLOR_ACCENT}{short}{R}"
                 ))
             return lines
@@ -1689,7 +1686,7 @@ class IRCBot:
     def _daily_vulns_worker(self):
         """Background worker: fetch and post daily CVE digest to all channels."""
         try:
-            lines = self.get_top_vulns(5)
+            lines = self.get_latest_cves(5)
             for channel in self.channels:
                 for line in lines:
                     self.send_message(channel, line)
@@ -1767,6 +1764,14 @@ class IRCBot:
                     return
                 raw_cmd = Sanitizer.sanitize_irc_output(" ".join(parts[1:]))
                 self.send_raw(raw_cmd)
+                return
+
+            elif command == f"{p}vulntest":
+                self.send_message(channel, self._info("Testing daily CVE digest..."))
+                lines = self.get_latest_cves(5)
+                for line in lines:
+                    self.send_message(channel, line)
+                    time.sleep(0.3)
                 return
 
         if not self._check_rate_limit(nick):
@@ -2128,8 +2133,8 @@ class IRCBot:
                 time.sleep(0.3)
 
         elif command in (f"{p}vuln", f"{p}vulns", f"{p}cves"):
-            self.send_message(channel, self._info("Fetching top CVEs from NVD..."))
-            result = self.get_top_vulns(5)
+            self.send_message(channel, self._info("Fetching latest CVEs from NVD..."))
+            result = self.get_latest_cves(5)
             for line in result:
                 self.send_message(channel, line)
                 time.sleep(0.3)
@@ -2151,7 +2156,7 @@ class IRCBot:
                 f" {B}{C.LIGHT_BLUE}Text{R}      {COLOR_ACCENT}{p}reverse <text>{R}{dot}{COLOR_ACCENT}{p}mock <text>{R}",
             ]
             if self._is_admin(hostmask):
-                lines.append(f" {B}{C.RED}Admin{R}     {COLOR_ACCENT}{p}join{R}{dot}{COLOR_ACCENT}{p}part{R}{dot}{COLOR_ACCENT}{p}quit{R}{dot}{COLOR_ACCENT}{p}say{R}{dot}{COLOR_ACCENT}{p}nick{R}{dot}{COLOR_ACCENT}{p}kick{R}{dot}{COLOR_ACCENT}{p}raw{R}")
+                lines.append(f" {B}{C.RED}Admin{R}     {COLOR_ACCENT}{p}join{R}{dot}{COLOR_ACCENT}{p}part{R}{dot}{COLOR_ACCENT}{p}quit{R}{dot}{COLOR_ACCENT}{p}say{R}{dot}{COLOR_ACCENT}{p}nick{R}{dot}{COLOR_ACCENT}{p}kick{R}{dot}{COLOR_ACCENT}{p}raw{R}{dot}{COLOR_ACCENT}{p}vulntest{R}")
             for line in lines:
                 self.send_message(channel, line)
                 time.sleep(0.3)
