@@ -1563,7 +1563,8 @@ class IRCBot:
         return cve_id, score, severity, published, desc
 
     def _nvd_get(self, url: str, retries: int = 3, delay: int = 10) -> dict:
-        """GET a NVD API URL with retries on empty/bad responses."""
+        """GET a NVD API URL with retries on transient failures.
+        NVD can return 404 or empty body for newly indexed CVEs — both are retried."""
         last_err = None
         for attempt in range(1, retries + 1):
             try:
@@ -1574,8 +1575,9 @@ class IRCBot:
                     time.sleep(delay)
                     continue
                 if not resp.text.strip():
-                    print(f"[NVD] empty response (attempt {attempt}/{retries}), retrying in {delay}s")
-                    time.sleep(delay)
+                    print(f"[NVD] empty/404 response (attempt {attempt}/{retries}), retrying in {delay}s")
+                    if attempt < retries:
+                        time.sleep(delay)
                     continue
                 return resp.json()
             except Exception as e:
