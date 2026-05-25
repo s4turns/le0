@@ -1543,7 +1543,7 @@ class IRCBot:
         return h
 
     def _nvd_extract(self, cve: dict):
-        """Extract (id, score, severity, published, desc) from an NVD cve object."""
+        """Extract (id, score, severity, published, app, desc) from an NVD cve object."""
         cve_id = cve.get('id', '?')
         published = cve.get('published', '')[:10]
         desc = ''
@@ -1560,7 +1560,23 @@ class IRCBot:
                 score = cd.get('baseScore')
                 severity = cd.get('baseSeverity') or metrics[key][0].get('baseSeverity', '')
                 break
-        return cve_id, score, severity, published, desc
+        # Extract app name from first CPE match: cpe:2.3:a:vendor:product:...
+        app = ''
+        for config in cve.get('configurations', []):
+            for node in config.get('nodes', []):
+                for match in node.get('cpeMatch', []):
+                    cpe = match.get('criteria', '')
+                    parts = cpe.split(':')
+                    if len(parts) >= 5:
+                        vendor  = parts[3].replace('_', ' ').title()
+                        product = parts[4].replace('_', ' ').title()
+                        app = product if vendor.lower() == product.lower() else f"{vendor} {product}"
+                        break
+                if app:
+                    break
+            if app:
+                break
+        return cve_id, score, severity, published, app, desc
 
     def _nvd_get(self, url: str, retries: int = 3) -> dict:
         """GET a NVD API URL with retries on transient failures.
@@ -1598,7 +1614,7 @@ class IRCBot:
             vulns = data.get('vulnerabilities', [])
             if not vulns:
                 return [self._error(f"{cve_id} not found in NVD")]
-            cid, score, severity, published, desc = self._nvd_extract(vulns[0]['cve'])
+            cid, score, severity, published, app, desc = self._nvd_extract(vulns[0]['cve'])
             if score is not None:
                 sc = self._cvss_color(score)
                 score_text = f"{B}{sc}{score}{R}  {B}{sc}{severity}{R}"
@@ -1609,6 +1625,10 @@ class IRCBot:
                 f"{self._label('CVSS')}: {score_text}  "
                 f"{self._label('Published')}: {COLOR_VALUE}{published}{R}"
             ))
+            if app:
+                lines.append(self._arrow_line(
+                    f"{self._label('App')}: {B}{COLOR_ACCENT}{app}{R}"
+                ))
             if desc:
                 words = desc.split()
                 cur = ""
@@ -1655,14 +1675,15 @@ class IRCBot:
                 f"Latest CVEs {BOX_SEP} {B}{COLOR_INFO}7d{R}{COLOR_PRIMARY} {BOX_SEP} {COLOR_VALUE}{total} published{R}"
             )]
             for v in vulns[:count]:
-                cid, score, severity, published, desc = self._nvd_extract(v['cve'])
+                cid, score, severity, published, app, desc = self._nvd_extract(v['cve'])
                 score_val = score if score is not None else 0.0
                 sc = self._cvss_color(score_val)
                 score_str = f"[{score_val}]" if score is not None else "[N/A]"
-                short = (desc[:110] + '...') if len(desc) > 110 else desc
+                app_str = f"{B}{COLOR_ACCENT}{app}{R} — " if app else ""
+                short = (desc[:90] + '...') if len(desc) > 90 else desc
                 lines.append(self._arrow_line(
                     f"{B}{sc}{cid}{R} {B}{sc}{score_str}{R} "
-                    f"{COLOR_VALUE}{published}{R} {COLOR_ACCENT}{short}{R}"
+                    f"{COLOR_VALUE}{published}{R} {app_str}{COLOR_ACCENT}{short}{R}"
                 ))
             return lines
         except Exception as e:
