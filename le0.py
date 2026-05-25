@@ -1664,15 +1664,29 @@ class IRCBot:
         t.start()
 
     def _daily_vulns_worker(self):
-        """Background worker: fetch and post daily CVE digest to all channels."""
-        try:
-            lines = self.get_latest_cves(5)
-            for channel in self.channels:
-                for line in lines:
-                    self.send_message(channel, line)
-                    time.sleep(0.5)
-        except Exception as e:
-            print(f"[CVE daily] post failed: {e}")
+        """Background worker: fetch and post daily CVE digest to all channels.
+        Retries up to 5 times with 60s delays if NVD returns nothing useful."""
+        lines = None
+        for attempt in range(1, 6):
+            try:
+                result = self.get_latest_cves(5)
+                # Success = header line + at least one CVE line
+                if len(result) < 2:
+                    raise ValueError(f"NVD returned no CVEs: {result}")
+                lines = result
+                print(f"[CVE daily] fetched {len(result) - 1} CVEs on attempt {attempt}")
+                break
+            except Exception as e:
+                print(f"[CVE daily] attempt {attempt}/5 failed: {e}")
+                if attempt < 5:
+                    time.sleep(60)
+        if not lines:
+            print("[CVE daily] all retries exhausted, giving up")
+            return
+        for channel in self.channels:
+            for line in lines:
+                self.send_message(channel, line)
+                time.sleep(0.5)
 
     # ─── Command Handler ──────────────────────────────────────────
 
