@@ -2127,7 +2127,7 @@ class IRCBot:
                 self.send_message(channel, line)
                 time.sleep(0.3)
 
-        elif command in (f"{p}vulns", f"{p}cves"):
+        elif command in (f"{p}vuln", f"{p}vulns", f"{p}cves"):
             self.send_message(channel, self._info("Fetching top CVEs from NVD..."))
             result = self.get_top_vulns(5)
             for line in result:
@@ -2143,7 +2143,7 @@ class IRCBot:
                 f" {B}{C.YELLOW}Info{R}      {COLOR_ACCENT}{p}urban/ud <term>{R}{dot}{COLOR_ACCENT}{p}time [loc]{R}{dot}{COLOR_ACCENT}{p}http <code>{R}{dot}{COLOR_ACCENT}{p}dns <host>{R}{dot}{COLOR_ACCENT}{p}geo <ip>{R}",
                 f" {B}{C.GREEN}Net{R}       {COLOR_ACCENT}{p}title/t <url>{R}{dot}{COLOR_ACCENT}{p}isup/up <host>{R}{dot}{COLOR_ACCENT}{p}shorten <url>{R}{dot}{COLOR_ACCENT}{p}stock <tick>{R}",
                 f" {B}{C.LIGHT_BLUE}Lookup{R}    {COLOR_ACCENT}{p}define/def <word>{R}{dot}{COLOR_ACCENT}{p}tr <lang> <text>{R}{dot}{COLOR_ACCENT}{p}whois <nick>{R}",
-                f" {B}{C.RED}Security{R}  {COLOR_ACCENT}{p}cve <CVE-ID>{R}{dot}{COLOR_ACCENT}{p}vulns/cves{R}",
+                f" {B}{C.RED}Security{R}  {COLOR_ACCENT}{p}cve <CVE-ID>{R}{dot}{COLOR_ACCENT}{p}vuln/vulns/cves{R}",
                 f" {B}{C.CYAN}Fun{R}       {COLOR_ACCENT}{p}coin/flip{R}{dot}{COLOR_ACCENT}{p}roll/dice [XdY]{R}{dot}{COLOR_ACCENT}{p}8ball/8 <q>{R}{dot}{COLOR_ACCENT}{p}rps <r/p/s>{R}{dot}{COLOR_ACCENT}{p}fact{R}",
                 f" {B}{C.YELLOW}Social{R}    {COLOR_ACCENT}{p}quote{R}{dot}{COLOR_ACCENT}{p}addquote <text>{R}{dot}{COLOR_ACCENT}{p}tell <nick> <msg>{R}",
                 f" {B}{C.LIGHT_GREEN}Utility{R}   {COLOR_ACCENT}{p}seen <nick>{R}{dot}{COLOR_ACCENT}{p}ping{R}{dot}{COLOR_ACCENT}{p}uptime{R}",
