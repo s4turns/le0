@@ -197,7 +197,8 @@ class IRCBot:
                  nickserv_pass: Optional[str] = None,
                  sasl_username: Optional[str] = None,
                  sasl_password: Optional[str] = None,
-                 admins: list = None):
+                 admins: list = None,
+                 nvd_api_key: Optional[str] = None):
         self.server = server
         self.port = port
         self.nickname = nickname
@@ -210,6 +211,7 @@ class IRCBot:
         self.sasl_username = sasl_username
         self.sasl_password = sasl_password
         self.admins = admins or []
+        self.nvd_api_key = nvd_api_key
         self.irc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.start_time = time.time()
 
@@ -1278,7 +1280,7 @@ class IRCBot:
     def get_title(self, url: str) -> str:
         """Fetch the <title> of a webpage."""
         try:
-            resp = requests.get(url, timeout=6, headers={'User-Agent': 'le0-irc-bot/1.0'}, allow_redirects=True)
+            resp = requests.get(url, timeout=6, headers=self._nvd_headers(), allow_redirects=True)
             resp.raise_for_status()
             # Extract title with regex (avoids html.parser encoding edge-cases)
             m = re.search(r'<title[^>]*>([^<]{1,300})', resp.text, re.IGNORECASE | re.DOTALL)
@@ -1359,7 +1361,7 @@ class IRCBot:
         try:
             ticker = ticker.upper()
             url = f"https://query1.finance.yahoo.com/v8/finance/chart/{urllib.parse.quote(ticker)}?interval=1d&range=1d"
-            resp = requests.get(url, timeout=6, headers={'User-Agent': 'le0-irc-bot/1.0'})
+            resp = requests.get(url, timeout=6, headers=self._nvd_headers())
             data = resp.json()
             meta = data.get('chart', {}).get('result', [{}])[0].get('meta', {})
             if not meta:
@@ -1396,7 +1398,7 @@ class IRCBot:
         if '://' not in host:
             host = 'http://' + host
         try:
-            resp = requests.get(host, timeout=5, headers={'User-Agent': 'le0-irc-bot/1.0'}, allow_redirects=True)
+            resp = requests.get(host, timeout=5, headers=self._nvd_headers(), allow_redirects=True)
             code = resp.status_code
             if code < 400:
                 status = f"{C.LIGHT_GREEN}UP{R}"
@@ -1533,6 +1535,13 @@ class IRCBot:
             return COLOR_INFO
         return COLOR_SUCCESS
 
+    def _nvd_headers(self) -> dict:
+        """Build NVD request headers, including API key if configured."""
+        h = {'User-Agent': 'le0-irc-bot/1.0'}
+        if self.nvd_api_key:
+            h['apiKey'] = self.nvd_api_key
+        return h
+
     def _nvd_extract(self, cve: dict):
         """Extract (id, score, severity, published, desc) from an NVD cve object."""
         cve_id = cve.get('id', '?')
@@ -1560,7 +1569,7 @@ class IRCBot:
             if not re.match(r'^CVE-\d{4}-\d+$', cve_id):
                 return [self._error("Invalid CVE ID (use: CVE-2024-12345)")]
             url = f"https://services.nvd.nist.gov/rest/json/cves/2.0?cveId={cve_id}"
-            resp = requests.get(url, timeout=12, headers={'User-Agent': 'le0-irc-bot/1.0'})
+            resp = requests.get(url, timeout=12, headers=self._nvd_headers())
             data = resp.json()
             vulns = data.get('vulnerabilities', [])
             if not vulns:
@@ -1613,12 +1622,12 @@ class IRCBot:
                 f"?pubStartDate={start.strftime(fmt)}&pubEndDate={now.strftime(fmt)}"
                 "&cvssV3Severity=CRITICAL"
             )
-            resp = requests.get(url, timeout=12, headers={'User-Agent': 'le0-irc-bot/1.0'})
+            resp = requests.get(url, timeout=12, headers=self._nvd_headers())
             data = resp.json()
             vulns = data.get('vulnerabilities', [])
             if not vulns:
                 url = url.replace('CRITICAL', 'HIGH')
-                resp = requests.get(url, timeout=12, headers={'User-Agent': 'le0-irc-bot/1.0'})
+                resp = requests.get(url, timeout=12, headers=self._nvd_headers())
                 data = resp.json()
                 vulns = data.get('vulnerabilities', [])
             if not vulns:
@@ -2328,6 +2337,7 @@ if __name__ == "__main__":
         sasl_username=config.SASL_USERNAME,
         sasl_password=config.SASL_PASSWORD,
         admins=getattr(config, 'ADMINS', []),
+        nvd_api_key=getattr(config, 'NVD_API_KEY', None),
     )
 
     # Enhanced startup banner

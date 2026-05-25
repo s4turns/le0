@@ -18,3 +18,7 @@ PASSWORD = None                 # Server password (if needed)
 NICKSERV_PASS = None            # NickServ identify password (if needed)
 SASL_USERNAME = None            # SASL plain username (if needed)
 SASL_PASSWORD = None            # SASL plain password (if needed)
+
+# NVD API key (free at https://nvd.nist.gov/developers/request-an-api-key)
+# Without a key: 5 req/30s limit. With a key: 50 req/30s — much faster/reliable.
+NVD_API_KEY = None
