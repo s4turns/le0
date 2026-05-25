@@ -1562,29 +1562,29 @@ class IRCBot:
                 break
         return cve_id, score, severity, published, desc
 
-    def _nvd_get(self, url: str, retries: int = 3, delay: int = 10) -> dict:
+    def _nvd_get(self, url: str, retries: int = 3) -> dict:
         """GET a NVD API URL with retries on transient failures.
-        NVD can return 404 or empty body for newly indexed CVEs — both are retried."""
+        NVD can return 404 or empty body for newly indexed CVEs — both are retried.
+        Backoff: 0s, 5s, 15s between attempts."""
+        backoff = [0, 5, 15]
         last_err = None
         for attempt in range(1, retries + 1):
             try:
+                delay = backoff[attempt - 1]
+                if delay:
+                    time.sleep(delay)
                 resp = requests.get(url, timeout=12, headers=self._nvd_headers())
                 print(f"[NVD] HTTP {resp.status_code} — {url[:80]}")
                 if resp.status_code == 429:
-                    print(f"[NVD] rate limited, waiting {delay}s (attempt {attempt}/{retries})")
-                    time.sleep(delay)
+                    print(f"[NVD] rate limited (attempt {attempt}/{retries})")
                     continue
                 if not resp.text.strip():
-                    print(f"[NVD] empty/404 response (attempt {attempt}/{retries}), retrying in {delay}s")
-                    if attempt < retries:
-                        time.sleep(delay)
+                    print(f"[NVD] empty/404 response (attempt {attempt}/{retries})")
                     continue
                 return resp.json()
             except Exception as e:
                 last_err = e
                 print(f"[NVD] request failed (attempt {attempt}/{retries}): {e}")
-                if attempt < retries:
-                    time.sleep(delay)
         raise ConnectionError(last_err or "NVD returned empty response after retries")
 
     def get_cve(self, cve_id: str) -> list:
