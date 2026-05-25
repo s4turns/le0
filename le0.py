@@ -1536,11 +1536,30 @@ class IRCBot:
         return COLOR_SUCCESS
 
     def _nvd_headers(self) -> dict:
-        """Build NVD request headers, including API key if configured."""
+        """Build NVD request headers, including API key if active."""
         h = {'User-Agent': 'le0-irc-bot/1.0'}
-        if self.nvd_api_key:
+        if self._nvd_key_active:
             h['apiKey'] = self.nvd_api_key
         return h
+
+    def _check_nvd_key(self):
+        """Verify the NVD API key is activated (requires email confirmation from NVD).
+        Called once at startup — stores result in _nvd_key_active."""
+        self._nvd_key_active = False
+        if not self.nvd_api_key:
+            return
+        try:
+            r = requests.get(
+                'https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=CVE-2024-3400',
+                timeout=8, headers={'User-Agent': 'le0-irc-bot/1.0', 'apiKey': self.nvd_api_key}
+            )
+            if r.status_code == 200:
+                self._nvd_key_active = True
+                print("[NVD] API key active — using authenticated rate limit (50 req/30s)")
+            else:
+                print(f"[NVD] API key not yet active (HTTP {r.status_code}) — using unauthenticated")
+        except Exception as e:
+            print(f"[NVD] Key check failed: {e} — using unauthenticated")
 
     def _nvd_extract(self, cve: dict):
         """Extract (id, score, severity, published, desc) from an NVD cve object."""
@@ -2141,6 +2160,7 @@ class IRCBot:
     def run(self):
         """Main bot loop."""
         self.connect()
+        self._check_nvd_key()
 
         buffer = ""
         connected = False
