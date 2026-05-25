@@ -2359,7 +2359,7 @@ if __name__ == "__main__":
         sasl_username=config.SASL_USERNAME,
         sasl_password=config.SASL_PASSWORD,
         admins=getattr(config, 'ADMINS', []),
-        nvd_api_key=getattr(config, 'NVD_API_KEY', None),
+        nvd_api_key=os.environ.get('NVD_API_KEY'),
     )
 
     # Enhanced startup banner
