@@ -679,7 +679,7 @@ class IRCBot:
         try:
             safe_location = Sanitizer.safe_url_param(location)
             geocode_url = self.geocoding_api.format(location=safe_location)
-            geo_response = requests.get(geocode_url, timeout=5)
+            geo_response = requests.get(geocode_url, timeout=10)
 
             if geo_response.status_code != 200:
                 return self._error(f"Could not find location '{location}'")
@@ -695,7 +695,7 @@ class IRCBot:
             country = result.get('country', '')
 
             weather_url = self.openmeteo_api.format(lat=lat, lon=lon)
-            weather_response = requests.get(weather_url, timeout=5)
+            weather_response = requests.get(weather_url, timeout=10)
 
             if weather_response.status_code != 200:
                 return self._error("Error fetching weather data")
@@ -771,7 +771,7 @@ class IRCBot:
         try:
             safe_location = Sanitizer.safe_url_param(location)
             geocode_url = self.geocoding_api.format(location=safe_location)
-            geo_response = requests.get(geocode_url, timeout=5)
+            geo_response = requests.get(geocode_url, timeout=10)
 
             if geo_response.status_code != 200:
                 return [self._error(f"Could not find location '{location}'")]
@@ -787,7 +787,7 @@ class IRCBot:
             country = result.get('country', '')
 
             weather_url = self.openmeteo_api.format(lat=lat, lon=lon)
-            weather_response = requests.get(weather_url, timeout=5)
+            weather_response = requests.get(weather_url, timeout=10)
 
             if weather_response.status_code != 200:
                 return [self._error("Error fetching forecast data")]
@@ -847,7 +847,7 @@ class IRCBot:
             if location:
                 safe_location = Sanitizer.safe_url_param(location)
                 geocode_url = self.geocoding_api.format(location=safe_location)
-                geo_response = requests.get(geocode_url, timeout=5)
+                geo_response = requests.get(geocode_url, timeout=10)
 
                 if geo_response.status_code == 200:
                     geo_data = geo_response.json()
@@ -1298,7 +1298,7 @@ class IRCBot:
         """Look up a word definition via Free Dictionary API."""
         try:
             url = f"https://api.dictionaryapi.dev/api/v2/entries/en/{urllib.parse.quote(word)}"
-            resp = requests.get(url, timeout=5)
+            resp = requests.get(url, timeout=10)
             if resp.status_code == 404:
                 return self._error(f"No definition found for '{word}'")
             data = resp.json()
@@ -1348,7 +1348,7 @@ class IRCBot:
         """Shorten a URL using TinyURL."""
         try:
             api = f"https://tinyurl.com/api-create.php?url={urllib.parse.quote(url, safe='')}"
-            resp = requests.get(api, timeout=5)
+            resp = requests.get(api, timeout=10)
             short = resp.text.strip()
             if not short.startswith('http'):
                 return self._error("Shortener returned an unexpected response")
@@ -1398,7 +1398,7 @@ class IRCBot:
         if '://' not in host:
             host = 'http://' + host
         try:
-            resp = requests.get(host, timeout=5, headers=self._nvd_headers(), allow_redirects=True)
+            resp = requests.get(host, timeout=10, headers=self._nvd_headers(), allow_redirects=True)
             code = resp.status_code
             if code < 400:
                 status = f"{C.LIGHT_GREEN}UP{R}"
@@ -1495,7 +1495,7 @@ class IRCBot:
         """Get geolocation info for an IP address or hostname."""
         try:
             url = f"http://ip-api.com/json/{urllib.parse.quote(query)}?fields=status,message,country,regionName,city,isp,as,query,lat,lon,timezone"
-            resp = requests.get(url, timeout=5)
+            resp = requests.get(url, timeout=10)
             data = resp.json()
 
             if data.get('status') != 'success':
