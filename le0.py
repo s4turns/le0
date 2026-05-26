@@ -674,19 +674,90 @@ class IRCBot:
 
     # ─── Weather ──────────────────────────────────────────────────
 
+    def _weather_from_wttr(self, location: str) -> str:
+        """Fetch current weather from wttr.in (fallback). Supports city names and ZIP codes."""
+        safe = Sanitizer.safe_url_param(location)
+        resp = requests.get(f"https://wttr.in/{safe}?format=j1",
+                            timeout=10, headers={'User-Agent': 'le0-irc-bot/1.0'})
+        if resp.status_code != 200:
+            raise ValueError(f"wttr.in HTTP {resp.status_code}")
+        data = resp.json()
+        cur  = data['current_condition'][0]
+        area = data['nearest_area'][0]
+        city    = area['areaName'][0]['value']
+        country = area['country'][0]['value']
+        loc_display = f"{city}, {country}"
+        temp_c  = int(cur['temp_C']);          temp_f  = int(cur['temp_F'])
+        feels_c = int(cur['FeelsLikeC']);      feels_f = int(cur['FeelsLikeF'])
+        humidity   = int(cur['humidity'])
+        wind_speed = int(cur['windspeedKmph'])
+        wind_dir   = cur['winddir16Point']
+        pressure   = int(cur['pressure'])
+        visibility = int(cur['visibility'])
+        cloud      = int(cur['cloudcover'])
+        desc       = cur['weatherDesc'][0]['value']
+        temp_color   = self._temp_color(temp_c)
+        feels_color  = self._temp_color(feels_c)
+        temp_text    = f"{B}{temp_color}{temp_c}°C{R} {COLOR_PRIMARY}/{R} {B}{temp_color}{temp_f}°F{R}"
+        feels_text   = f"{B}{feels_color}{feels_c}°C{R} {COLOR_PRIMARY}/{R} {B}{feels_color}{feels_f}°F{R}"
+        line1 = self._header(f"Weather {BOX_SEP} {B}{COLOR_ACCENT}{loc_display}{R}{COLOR_PRIMARY}")
+        line2 = self._arrow_line(
+            f"{self._label('Condition')}: {B}{C.YELLOW}{desc}{R}  "
+            f"{self._label('Temp')}: {temp_text}  "
+            f"{self._label('Feels')}: {feels_text}"
+        )
+        line3 = self._arrow_line(
+            f"{self._label('Humidity')}: {B}{self._humidity_color(humidity)}{humidity}%{R}  "
+            f"{self._label('Wind')}: {B}{self._wind_color(wind_speed)}{wind_speed}km/h{R} {COLOR_ACCENT}{wind_dir}{R}  "
+            f"{self._label('Clouds')}: {B}{self._cloud_color(cloud)}{cloud}%{R}"
+        )
+        line4 = self._arrow_line(
+            f"{self._label('Pressure')}: {COLOR_VALUE}{pressure}hPa{R}  "
+            f"{self._label('Visibility')}: {COLOR_VALUE}{visibility}km{R}"
+        )
+        return f"{line1}\n{line2}\n{line3}\n{line4}"
+
+    def _forecast_from_wttr(self, location: str, days: int = 3) -> list:
+        """Fetch forecast from wttr.in (fallback)."""
+        safe = Sanitizer.safe_url_param(location)
+        resp = requests.get(f"https://wttr.in/{safe}?format=j1",
+                            timeout=10, headers={'User-Agent': 'le0-irc-bot/1.0'})
+        if resp.status_code != 200:
+            raise ValueError(f"wttr.in HTTP {resp.status_code}")
+        data = resp.json()
+        area = data['nearest_area'][0]
+        city    = area['areaName'][0]['value']
+        country = area['country'][0]['value']
+        loc_display = f"{city}, {country}"
+        forecasts = [self._header(f"Forecast {BOX_SEP} {B}{COLOR_ACCENT}{loc_display}{R}{COLOR_PRIMARY}")]
+        for day in data['weather'][:days]:
+            date       = day['date']
+            max_c = int(day['maxtempC']); max_f = int(day['maxtempF'])
+            min_c = int(day['mintempC']); min_f = int(day['mintempF'])
+            desc  = day['hourly'][4]['weatherDesc'][0]['value']  # midday description
+            precip = float(day.get('uvIndex', 0))  # wttr doesn't give precip mm in this field
+            max_color = self._temp_color(max_c)
+            min_color = self._temp_color(min_c)
+            forecasts.append(self._arrow_line(
+                f"{B}{COLOR_INFO}{date}{R} {BOX_SEP} {C.YELLOW}{desc}{R}  "
+                f"{self._label('High')}: {B}{max_color}{max_c}°C{R}{COLOR_PRIMARY}/{R}{B}{max_color}{max_f}°F{R}  "
+                f"{self._label('Low')}: {min_color}{min_c}°C{R}{COLOR_PRIMARY}/{R}{min_color}{min_f}°F{R}"
+            ))
+        return forecasts
+
     def get_weather(self, location: str) -> str:
-        """Get weather information for a location."""
+        """Get weather information for a location. Falls back to wttr.in if open-meteo is down."""
         try:
             safe_location = Sanitizer.safe_url_param(location)
             geocode_url = self.geocoding_api.format(location=safe_location)
             geo_response = requests.get(geocode_url, timeout=10)
 
             if geo_response.status_code != 200:
-                return self._error(f"Could not find location '{location}'")
+                raise ValueError("geocoding failed")
 
             geo_data = geo_response.json()
             if not geo_data.get('results'):
-                return self._error(f"Could not find location '{location}'")
+                raise ValueError("location not found")
 
             result = geo_data['results'][0]
             lat = result['latitude']
@@ -698,7 +769,7 @@ class IRCBot:
             weather_response = requests.get(weather_url, timeout=10)
 
             if weather_response.status_code != 200:
-                return self._error("Error fetching weather data")
+                raise ValueError(f"open-meteo HTTP {weather_response.status_code}")
 
             data = weather_response.json()
             current = data['current']
@@ -728,14 +799,12 @@ class IRCBot:
 
             location_display = f"{city_name}, {country}" if country else city_name
 
-            # Temperature-based coloring
             temp_color = self._temp_color(temp_c)
             feels_color = self._temp_color(feels_c)
             temp_text = f"{B}{temp_color}{temp_c}°C{R} {COLOR_PRIMARY}/{R} {B}{temp_color}{temp_f}°F{R}"
             feels_text = f"{B}{feels_color}{feels_c}°C{R} {COLOR_PRIMARY}/{R} {B}{feels_color}{feels_f}°F{R}"
             desc_text = f"{B}{C.YELLOW}{desc}{R}"
 
-            # Apply color helpers to all weather data
             humidity_color = self._humidity_color(humidity)
             wind_color = self._wind_color(wind_speed)
             cloud_color = self._cloud_color(cloud_cover)
@@ -759,12 +828,12 @@ class IRCBot:
             )
             return f"{line1}\n{line2}\n{line3}\n{line4}"
 
-        except requests.exceptions.Timeout:
-            return self._error("Request timed out - weather service may be unavailable")
-        except requests.exceptions.RequestException:
-            return self._error("Network error while fetching weather")
-        except (KeyError, IndexError, ValueError):
-            return self._error("Error parsing weather data")
+        except Exception as e:
+            print(f"[weather] open-meteo failed ({e}), trying wttr.in")
+            try:
+                return self._weather_from_wttr(location)
+            except Exception as e2:
+                return self._error(f"Weather unavailable: {e2}")
 
     def get_forecast(self, location: str, days: int = 3) -> list:
         """Get weather forecast for a location."""
@@ -832,12 +901,12 @@ class IRCBot:
 
             return forecasts
 
-        except requests.exceptions.Timeout:
-            return [self._error("Request timed out - weather service may be unavailable")]
-        except requests.exceptions.RequestException:
-            return [self._error("Network error while fetching forecast")]
-        except (KeyError, IndexError, ValueError):
-            return [self._error("Error parsing forecast data")]
+        except Exception as e:
+            print(f"[forecast] open-meteo failed ({e}), trying wttr.in")
+            try:
+                return self._forecast_from_wttr(location, days)
+            except Exception as e2:
+                return [self._error(f"Forecast unavailable: {e2}")]
 
     # ─── Info Commands ────────────────────────────────────────────
 
