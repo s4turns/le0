@@ -1647,6 +1647,11 @@ class IRCBot:
                 break
         return cve_id, score, severity, published, app, desc
 
+    def _two_sentences(self, text: str) -> str:
+        """Return the first two complete sentences from text (ends at second period)."""
+        sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+        return ' '.join(sentences[:2])
+
     def _nvd_get(self, url: str, retries: int = 3) -> dict:
         """GET a NVD API URL with retries on transient failures.
         NVD can return 404 or empty body for newly indexed CVEs — both are retried.
@@ -1699,19 +1704,18 @@ class IRCBot:
                     f"{self._label('App')}: {B}{COLOR_ACCENT}{app}{R}"
                 ))
             if desc:
-                words = desc.split()
+                summary = self._two_sentences(desc)
+                words = summary.split()
                 cur = ""
                 desc_lines = []
                 for w in words:
-                    if len(desc_lines) >= 4:
-                        break
                     if len(cur) + len(w) + 1 <= 80:
                         cur += w + " "
                     else:
                         if cur:
                             desc_lines.append(cur.rstrip())
                         cur = w + " "
-                if cur and len(desc_lines) < 4:
+                if cur:
                     desc_lines.append(cur.rstrip())
                 for dl in desc_lines:
                     lines.append(self._arrow_line(f"{COLOR_ACCENT}{dl}{R}"))
@@ -1758,11 +1762,23 @@ class IRCBot:
                 sc = self._cvss_color(score_val)
                 score_str = f"[{score_val}]" if score is not None else "[N/A]"
                 app_str = f"{B}{COLOR_ACCENT}{app}{R} — " if app else ""
-                short = (desc[:90] + '...') if len(desc) > 90 else desc
                 lines.append(self._arrow_line(
                     f"{B}{sc}{cid}{R} {B}{sc}{score_str}{R} "
-                    f"{COLOR_VALUE}{published}{R} {app_str}{COLOR_ACCENT}{short}{R}"
+                    f"{COLOR_VALUE}{published}{R} {app_str}"
                 ))
+                if desc:
+                    summary = self._two_sentences(desc)
+                    words = summary.split()
+                    cur = ""
+                    for w in words:
+                        if len(cur) + len(w) + 1 <= 80:
+                            cur += w + " "
+                        else:
+                            if cur:
+                                lines.append(self._arrow_line(f"  {COLOR_ACCENT}{cur.rstrip()}{R}"))
+                            cur = w + " "
+                    if cur:
+                        lines.append(self._arrow_line(f"  {COLOR_ACCENT}{cur.rstrip()}{R}"))
             return lines
         except Exception as e:
             return [self._error(f"CVE feed failed: {e}")]
