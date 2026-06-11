@@ -1648,9 +1648,9 @@ class IRCBot:
         return cve_id, score, severity, published, app, desc
 
     def _two_sentences(self, text: str) -> str:
-        """Return the first two complete sentences from text (ends at second period)."""
+        """Return the first complete sentence from text (ends at first period)."""
         sentences = re.split(r'(?<=[.!?])\s+', text.strip())
-        return ' '.join(sentences[:2])
+        return sentences[0] if sentences else text
 
     def _nvd_get(self, url: str, retries: int = 3) -> dict:
         """GET a NVD API URL with retries on transient failures.
