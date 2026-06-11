@@ -1728,12 +1728,21 @@ class IRCBot:
             now = datetime.datetime.utcnow()
             start = now - datetime.timedelta(days=7)
             fmt = '%Y-%m-%dT%H:%M:%S.000'
-            url = (
+            base_url = (
                 "https://services.nvd.nist.gov/rest/json/cves/2.0"
                 f"?pubStartDate={start.strftime(fmt)}&pubEndDate={now.strftime(fmt)}"
-                "&resultsPerPage=50"
             )
-            data = self._nvd_get(url)
+            # NVD returns results oldest-first, so fetch the total count and
+            # then grab the LAST page of the window to get the newest CVEs.
+            probe = self._nvd_get(base_url + "&resultsPerPage=1")
+            total = probe.get('totalResults', 0)
+            if total == 0:
+                return [self._info("No new CVEs in the last 7 days.")]
+            page_size = 50
+            start_index = max(0, total - page_size)
+            data = self._nvd_get(
+                base_url + f"&resultsPerPage={page_size}&startIndex={start_index}"
+            )
             vulns = data.get('vulnerabilities', [])
             if not vulns:
                 return [self._info("No new CVEs in the last 7 days.")]
