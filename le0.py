@@ -1779,6 +1779,9 @@ class IRCBot:
                             cur = w + " "
                     if cur:
                         lines.append(self._arrow_line(f"  {COLOR_ACCENT}{cur.rstrip()}{R}"))
+                lines.append(self._arrow_line(
+                    f"  {self._label('URL')}: {COLOR_VALUE}https://nvd.nist.gov/vuln/detail/{cid}{R}"
+                ))
             return lines
         except Exception as e:
             return [self._error(f"CVE feed failed: {e}")]
