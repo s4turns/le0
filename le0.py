@@ -1767,18 +1767,7 @@ class IRCBot:
                     f"{COLOR_VALUE}{published}{R} {app_str}"
                 ))
                 if desc:
-                    summary = self._two_sentences(desc)
-                    words = summary.split()
-                    cur = ""
-                    for w in words:
-                        if len(cur) + len(w) + 1 <= 80:
-                            cur += w + " "
-                        else:
-                            if cur:
-                                lines.append(self._arrow_line(f"  {COLOR_ACCENT}{cur.rstrip()}{R}"))
-                            cur = w + " "
-                    if cur:
-                        lines.append(self._arrow_line(f"  {COLOR_ACCENT}{cur.rstrip()}{R}"))
+                    lines.append(self._arrow_line(f"  {COLOR_ACCENT}{self._two_sentences(desc)}{R}"))
                 lines.append(self._arrow_line(
                     f"  {self._label('URL')}: {COLOR_VALUE}https://nvd.nist.gov/vuln/detail/{cid}{R}"
                 ))
