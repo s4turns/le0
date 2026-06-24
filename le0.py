@@ -18,6 +18,8 @@ import fnmatch
 import json
 import datetime
 import threading
+import email.utils
+import xml.etree.ElementTree as ET
 import requests
 from typing import Optional
 
@@ -93,6 +95,11 @@ COLOR_WARNING = IRCColors.ORANGE
 COLOR_INFO = IRCColors.YELLOW
 COLOR_LABEL = IRCColors.CYAN
 COLOR_VALUE = IRCColors.LIGHT_GREY
+
+# CVE monitor — poll this RSS feed and post newly published high/critical CVEs.
+VULN_FEED_URL = "https://cvefeed.io/rssfeed/severity/high.xml"
+VULN_POLL_INTERVAL = 300          # seconds between feed polls
+VULN_INITIAL_LOOKBACK = 6420      # 1h47m: on first run, post CVEs newer than this many seconds ago
 
 
 class Sanitizer:
@@ -294,13 +301,21 @@ class IRCBot:
         self.tells_file = os.path.join(_base, 'tells.json')
         self._load_tells()
 
-        # Daily CVE post tracker — pre-set to today if already past noon CST so
-        # a restart during the noon hour doesn't re-flood the channel.
-        _cst_now = datetime.datetime.utcnow() - datetime.timedelta(hours=6)
-        if _cst_now.hour >= 12:
-            self._last_vuln_post = _cst_now.strftime('%Y-%m-%d')
-        else:
-            self._last_vuln_post = None
+        # CVE monitor — post newly published high/critical CVEs from the RSS
+        # feed as they appear. `_vuln_since` is the high-water mark: only CVEs
+        # published after it are posted. On first run it's set 1h47m back so we
+        # start with that CVE and skip everything older. `_posted_cve_ids` guards
+        # against duplicates across polls and restarts.
+        self.vuln_state_file = os.path.join(_base, 'vuln_state.json')
+        self._posted_cve_ids = []
+        self._vuln_since = None
+        self._vuln_poll_running = False
+        self._last_vuln_poll = 0.0
+        self._load_vuln_state()
+        if not self._vuln_since:
+            cutoff = datetime.datetime.now(datetime.timezone.utc) - \
+                datetime.timedelta(seconds=VULN_INITIAL_LOOKBACK)
+            self._vuln_since = cutoff.isoformat()
 
 
     # ─── Enhanced formatting helpers ───────────────────────────────
@@ -571,6 +586,26 @@ class IRCBot:
                 json.dump(self.tells, f, indent=2)
         except IOError as e:
             print(f"Warning: could not save tells: {e}")
+
+    def _load_vuln_state(self):
+        """Load CVE monitor state (high-water mark + posted IDs) from JSON file."""
+        try:
+            if os.path.exists(self.vuln_state_file):
+                with open(self.vuln_state_file, 'r') as f:
+                    state = json.load(f)
+                self._vuln_since = state.get('since')
+                self._posted_cve_ids = state.get('posted', [])
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"Warning: could not load vuln state: {e}")
+
+    def _save_vuln_state(self):
+        """Save CVE monitor state to JSON file."""
+        try:
+            with open(self.vuln_state_file, 'w') as f:
+                json.dump({'since': self._vuln_since,
+                           'posted': self._posted_cve_ids[-500:]}, f, indent=2)
+        except IOError as e:
+            print(f"Warning: could not save vuln state: {e}")
 
     # ─── Rate limiting ────────────────────────────────────────────
 
@@ -1776,43 +1811,110 @@ class IRCBot:
             return [self._error(f"CVE feed failed: {e}")]
 
     def _check_scheduled_tasks(self):
-        """Fire time-based scheduled tasks (daily CVE post at 12pm CST = UTC-6)."""
-        cst_now = datetime.datetime.utcnow() - datetime.timedelta(hours=6)
-        if cst_now.hour == 12:
-            today = cst_now.strftime('%Y-%m-%d')
-            if self._last_vuln_post != today:
-                self._last_vuln_post = today
-                self._post_daily_vulns()
+        """Poll the CVE RSS feed on an interval and post newly published CVEs."""
+        now = time.time()
+        if now - self._last_vuln_poll < VULN_POLL_INTERVAL:
+            return
+        self._last_vuln_poll = now
+        self._poll_new_vulns()
 
-    def _post_daily_vulns(self):
-        """Kick off the daily CVE digest in a background thread so recv loop isn't blocked."""
-        t = threading.Thread(target=self._daily_vulns_worker, daemon=True)
+    def _poll_new_vulns(self):
+        """Kick off a feed poll in a background thread so the recv loop isn't blocked."""
+        if self._vuln_poll_running:
+            return
+        self._vuln_poll_running = True
+        t = threading.Thread(target=self._vuln_poll_worker, daemon=True)
         t.start()
 
-    def _daily_vulns_worker(self):
-        """Background worker: fetch and post daily CVE digest to all channels.
-        Retries up to 5 times with 60s delays if NVD returns nothing useful."""
-        lines = None
-        for attempt in range(1, 6):
+    def _fetch_cve_feed(self) -> list:
+        """Fetch and parse the CVE RSS feed into a list of dicts (oldest-first).
+        Each dict: {id, link, title, published (aware datetime), score, severity, desc}."""
+        resp = requests.get(VULN_FEED_URL, timeout=12,
+                            headers={'User-Agent': 'le0-irc-bot/1.0'})
+        resp.raise_for_status()
+        root = ET.fromstring(resp.content)
+        items = []
+        for item in root.iterfind('.//item'):
+            title = (item.findtext('title') or '').strip()
+            link = (item.findtext('link') or '').strip()
+            guid = (item.findtext('guid') or '').strip()
+            desc_raw = item.findtext('description') or ''
+            pub_raw = (item.findtext('pubDate') or '').strip()
+
+            m = re.search(r'CVE-\d{4}-\d+', f"{guid} {title}")
+            if not m:
+                continue
+            cid = m.group(0)
+
             try:
-                result = self.get_latest_cves(5)
-                # Success = header line + at least one CVE line
-                if len(result) < 2:
-                    raise ValueError(f"NVD returned no CVEs: {result}")
-                lines = result
-                print(f"[CVE daily] fetched {len(result) - 1} CVEs on attempt {attempt}")
-                break
-            except Exception as e:
-                print(f"[CVE daily] attempt {attempt}/5 failed: {e}")
-                if attempt < 5:
-                    time.sleep(60)
-        if not lines:
-            print("[CVE daily] all retries exhausted, giving up")
-            return
-        for channel in self.channels:
-            for line in lines:
-                self.send_message(channel, line)
-                time.sleep(0.5)
+                published = email.utils.parsedate_to_datetime(pub_raw)
+                if published.tzinfo is None:
+                    published = published.replace(tzinfo=datetime.timezone.utc)
+            except (TypeError, ValueError):
+                continue
+
+            score, severity = None, ''
+            sm = re.search(r'Severity:\s*</strong>\s*([\d.]+)\s*\|\s*(\w+)', desc_raw)
+            if sm:
+                try:
+                    score = float(sm.group(1))
+                except ValueError:
+                    pass
+                severity = sm.group(2)
+
+            desc = ''
+            dm = re.search(r'Description\s*:\s*</strong>\s*(.*?)\s*<br', desc_raw, re.S)
+            if dm:
+                desc = re.sub(r'\s+', ' ', dm.group(1)).strip()
+
+            items.append({'id': cid, 'link': link or guid, 'title': title,
+                          'published': published, 'score': score,
+                          'severity': severity, 'desc': desc})
+        items.sort(key=lambda i: i['published'])
+        return items
+
+    def _vuln_poll_worker(self):
+        """Background worker: post feed CVEs published after the high-water mark."""
+        try:
+            since = datetime.datetime.fromisoformat(self._vuln_since)
+            newest = since
+            posted_any = False
+            for item in self._fetch_cve_feed():
+                if item['published'] <= since or item['id'] in self._posted_cve_ids:
+                    continue
+                for channel in self.channels:
+                    for line in self._format_cve_alert(item):
+                        self.send_message(channel, line)
+                        time.sleep(0.5)
+                self._posted_cve_ids.append(item['id'])
+                if item['published'] > newest:
+                    newest = item['published']
+                posted_any = True
+            if newest > since:
+                self._vuln_since = newest.isoformat()
+            if posted_any:
+                self._posted_cve_ids = self._posted_cve_ids[-500:]
+                self._save_vuln_state()
+        except Exception as e:
+            print(f"[CVE monitor] poll failed: {e}")
+        finally:
+            self._vuln_poll_running = False
+
+    def _format_cve_alert(self, item: dict) -> list:
+        """Format a single feed CVE as IRC alert lines."""
+        cid = item['id']
+        score = item['score']
+        score_val = score if score is not None else 0.0
+        sc = self._cvss_color(score_val)
+        sev = item['severity'] or 'N/A'
+        score_str = f"{score_val} {sev}" if score is not None else sev
+        lines = [self._header(f"New CVE {BOX_SEP} {B}{sc}{cid}{R}{COLOR_PRIMARY} {BOX_SEP} {B}{sc}{score_str}{R}")]
+        if item['desc']:
+            lines.append(self._arrow_line(f"{COLOR_ACCENT}{self._two_sentences(item['desc'])}{R}"))
+        lines.append(self._arrow_line(
+            f"{self._label('URL')}: {COLOR_VALUE}{item['link']}{R}"
+        ))
+        return lines
 
     # ─── Command Handler ──────────────────────────────────────────
 
@@ -1887,11 +1989,10 @@ class IRCBot:
                 return
 
             elif command == f"{p}vulntest":
-                self.send_message(channel, self._info("Testing daily CVE digest..."))
-                lines = self.get_latest_cves(5)
-                for line in lines:
-                    self.send_message(channel, line)
-                    time.sleep(0.3)
+                self.send_message(channel, self._info(
+                    f"CVE monitor active — posting new CVEs since {self._vuln_since} UTC. Forcing a poll..."))
+                self._last_vuln_poll = 0.0
+                self._poll_new_vulns()
                 return
 
         if not self._check_rate_limit(nick):
