@@ -18,8 +18,6 @@ import fnmatch
 import json
 import datetime
 import threading
-import email.utils
-import xml.etree.ElementTree as ET
 import requests
 from typing import Optional
 
@@ -95,12 +93,6 @@ COLOR_WARNING = IRCColors.ORANGE
 COLOR_INFO = IRCColors.YELLOW
 COLOR_LABEL = IRCColors.CYAN
 COLOR_VALUE = IRCColors.LIGHT_GREY
-
-# CVE monitor — poll this RSS feed and post newly published high/critical CVEs.
-VULN_FEED_URL = "https://cvefeed.io/rssfeed/severity/high.xml"
-VULN_POLL_INTERVAL = 300          # seconds between feed polls
-VULN_INITIAL_LOOKBACK = 6420      # 1h47m: on first run, post CVEs newer than this many seconds ago
-VULN_MAX_PER_POLL = 3             # never post more than this many CVEs per poll (anti-flood)
 
 
 class Sanitizer:
@@ -301,23 +293,6 @@ class IRCBot:
         self.tells = {}
         self.tells_file = os.path.join(_base, 'tells.json')
         self._load_tells()
-
-        # CVE monitor — post newly published high/critical CVEs from the RSS
-        # feed as they appear. `_vuln_since` is the high-water mark: only CVEs
-        # published after it are posted. On first run it's set 1h47m back so we
-        # start with that CVE and skip everything older. `_posted_cve_ids` guards
-        # against duplicates across polls and restarts.
-        self.vuln_state_file = os.path.join(_base, 'vuln_state.json')
-        self._posted_cve_ids = []
-        self._vuln_since = None
-        self._vuln_poll_running = False
-        self._last_vuln_poll = 0.0
-        self._load_vuln_state()
-        if not self._vuln_since:
-            cutoff = datetime.datetime.now(datetime.timezone.utc) - \
-                datetime.timedelta(seconds=VULN_INITIAL_LOOKBACK)
-            self._vuln_since = cutoff.isoformat()
-
 
     # ─── Enhanced formatting helpers ───────────────────────────────
 
@@ -587,26 +562,6 @@ class IRCBot:
                 json.dump(self.tells, f, indent=2)
         except IOError as e:
             print(f"Warning: could not save tells: {e}")
-
-    def _load_vuln_state(self):
-        """Load CVE monitor state (high-water mark + posted IDs) from JSON file."""
-        try:
-            if os.path.exists(self.vuln_state_file):
-                with open(self.vuln_state_file, 'r') as f:
-                    state = json.load(f)
-                self._vuln_since = state.get('since')
-                self._posted_cve_ids = state.get('posted', [])
-        except (json.JSONDecodeError, IOError) as e:
-            print(f"Warning: could not load vuln state: {e}")
-
-    def _save_vuln_state(self):
-        """Save CVE monitor state to JSON file."""
-        try:
-            with open(self.vuln_state_file, 'w') as f:
-                json.dump({'since': self._vuln_since,
-                           'posted': self._posted_cve_ids[-500:]}, f, indent=2)
-        except IOError as e:
-            print(f"Warning: could not save vuln state: {e}")
 
     # ─── Rate limiting ────────────────────────────────────────────
 
@@ -1713,84 +1668,31 @@ class IRCBot:
                 print(f"[NVD] request failed (attempt {attempt}/{retries}): {e}")
         raise ConnectionError(last_err or "NVD returned empty response after retries")
 
-    def get_cve(self, cve_id: str) -> list:
-        """Look up a specific CVE by ID via NVD API."""
+    def search_cves(self, query: str, count: int = 5) -> list:
+        """Search NVD for CVEs by keyword (or exact CVE-ID), newest first."""
         try:
-            cve_id = cve_id.upper()
-            if not re.match(r'^CVE-\d{4}-\d+$', cve_id):
-                return [self._error("Invalid CVE ID (use: CVE-2024-12345)")]
-            url = f"https://services.nvd.nist.gov/rest/json/cves/2.0?cveId={cve_id}"
-            data = self._nvd_get(url)
-            vulns = data.get('vulnerabilities', [])
-            if not vulns:
-                return [self._error(f"{cve_id} not found in NVD")]
-            cid, score, severity, published, app, desc = self._nvd_extract(vulns[0]['cve'])
-            if score is not None:
-                sc = self._cvss_color(score)
-                score_text = f"{B}{sc}{score}{R}  {B}{sc}{severity}{R}"
+            base = "https://services.nvd.nist.gov/rest/json/cves/2.0"
+            if re.match(r'^CVE-\d{4}-\d+$', query.upper()):
+                data = self._nvd_get(f"{base}?cveId={query.upper()}")
+                total = data.get('totalResults', 0)
             else:
-                score_text = f"{COLOR_VALUE}N/A{R}"
-            lines = [self._header(f"CVE: {cid}")]
-            lines.append(self._arrow_line(
-                f"{self._label('CVSS')}: {score_text}  "
-                f"{self._label('Published')}: {COLOR_VALUE}{published}{R}"
-            ))
-            if app:
-                lines.append(self._arrow_line(
-                    f"{self._label('App')}: {B}{COLOR_ACCENT}{app}{R}"
-                ))
-            if desc:
-                summary = self._two_sentences(desc)
-                words = summary.split()
-                cur = ""
-                desc_lines = []
-                for w in words:
-                    if len(cur) + len(w) + 1 <= 80:
-                        cur += w + " "
-                    else:
-                        if cur:
-                            desc_lines.append(cur.rstrip())
-                        cur = w + " "
-                if cur:
-                    desc_lines.append(cur.rstrip())
-                for dl in desc_lines:
-                    lines.append(self._arrow_line(f"{COLOR_ACCENT}{dl}{R}"))
-            lines.append(self._arrow_line(
-                f"{self._label('URL')}: {COLOR_VALUE}https://nvd.nist.gov/vuln/detail/{cid}{R}"
-            ))
-            return lines
-        except Exception as e:
-            return [self._error(f"CVE lookup failed: {e}")]
-
-    def get_latest_cves(self, count: int = 5) -> list:
-        """Fetch the most recently published CVEs from NVD (7-day window, newest first)."""
-        try:
-            now = datetime.datetime.utcnow()
-            start = now - datetime.timedelta(days=7)
-            fmt = '%Y-%m-%dT%H:%M:%S.000'
-            base_url = (
-                "https://services.nvd.nist.gov/rest/json/cves/2.0"
-                f"?pubStartDate={start.strftime(fmt)}&pubEndDate={now.strftime(fmt)}"
-            )
-            # NVD returns results oldest-first, so fetch the total count and
-            # then grab the LAST page of the window to get the newest CVEs.
-            probe = self._nvd_get(base_url + "&resultsPerPage=1")
-            total = probe.get('totalResults', 0)
-            if total == 0:
-                return [self._info("No new CVEs in the last 7 days.")]
-            page_size = 50
-            start_index = max(0, total - page_size)
-            data = self._nvd_get(
-                base_url + f"&resultsPerPage={page_size}&startIndex={start_index}"
-            )
+                kw = f"{base}?keywordSearch={urllib.parse.quote(query)}"
+                # NVD returns matches oldest-first, so probe the total and grab
+                # the LAST page to surface the most recent CVEs.
+                probe = self._nvd_get(kw + "&resultsPerPage=1")
+                total = probe.get('totalResults', 0)
+                if total == 0:
+                    return [self._info(f"No CVEs found for \"{query}\".")]
+                page_size = 20
+                start_index = max(0, total - page_size)
+                data = self._nvd_get(kw + f"&resultsPerPage={page_size}&startIndex={start_index}")
             vulns = data.get('vulnerabilities', [])
             if not vulns:
-                return [self._info("No new CVEs in the last 7 days.")]
-            # Sort newest-published first
+                return [self._info(f"No CVEs found for \"{query}\".")]
+            # Newest published first
             vulns.sort(key=lambda v: v['cve'].get('published', ''), reverse=True)
-            total = data.get('totalResults', len(vulns))
             lines = [self._header(
-                f"Latest CVEs {BOX_SEP} {B}{COLOR_INFO}7d{R}{COLOR_PRIMARY} {BOX_SEP} {COLOR_VALUE}{total} published{R}"
+                f"CVE Search {BOX_SEP} {B}{COLOR_INFO}{query}{R}{COLOR_PRIMARY} {BOX_SEP} {COLOR_VALUE}{total} match{'' if total == 1 else 'es'}{R}"
             )]
             for v in vulns[:count]:
                 cid, score, severity, published, app, desc = self._nvd_extract(v['cve'])
@@ -1809,113 +1711,7 @@ class IRCBot:
                 ))
             return lines
         except Exception as e:
-            return [self._error(f"CVE feed failed: {e}")]
-
-    def _check_scheduled_tasks(self):
-        """Poll the CVE RSS feed on an interval and post newly published CVEs."""
-        now = time.time()
-        if now - self._last_vuln_poll < VULN_POLL_INTERVAL:
-            return
-        self._last_vuln_poll = now
-        self._poll_new_vulns()
-
-    def _poll_new_vulns(self):
-        """Kick off a feed poll in a background thread so the recv loop isn't blocked."""
-        if self._vuln_poll_running:
-            return
-        self._vuln_poll_running = True
-        t = threading.Thread(target=self._vuln_poll_worker, daemon=True)
-        t.start()
-
-    def _fetch_cve_feed(self) -> list:
-        """Fetch and parse the CVE RSS feed into a list of dicts (oldest-first).
-        Each dict: {id, link, title, published (aware datetime), score, severity, desc}."""
-        resp = requests.get(VULN_FEED_URL, timeout=12,
-                            headers={'User-Agent': 'le0-irc-bot/1.0'})
-        resp.raise_for_status()
-        root = ET.fromstring(resp.content)
-        items = []
-        for item in root.iterfind('.//item'):
-            title = (item.findtext('title') or '').strip()
-            link = (item.findtext('link') or '').strip()
-            guid = (item.findtext('guid') or '').strip()
-            desc_raw = item.findtext('description') or ''
-            pub_raw = (item.findtext('pubDate') or '').strip()
-
-            m = re.search(r'CVE-\d{4}-\d+', f"{guid} {title}")
-            if not m:
-                continue
-            cid = m.group(0)
-
-            try:
-                published = email.utils.parsedate_to_datetime(pub_raw)
-                if published.tzinfo is None:
-                    published = published.replace(tzinfo=datetime.timezone.utc)
-            except (TypeError, ValueError):
-                continue
-
-            score, severity = None, ''
-            sm = re.search(r'Severity:\s*</strong>\s*([\d.]+)\s*\|\s*(\w+)', desc_raw)
-            if sm:
-                try:
-                    score = float(sm.group(1))
-                except ValueError:
-                    pass
-                severity = sm.group(2)
-
-            desc = ''
-            dm = re.search(r'Description\s*:\s*</strong>\s*(.*?)\s*<br', desc_raw, re.S)
-            if dm:
-                desc = re.sub(r'\s+', ' ', dm.group(1)).strip()
-
-            items.append({'id': cid, 'link': link or guid, 'title': title,
-                          'published': published, 'score': score,
-                          'severity': severity, 'desc': desc})
-        items.sort(key=lambda i: i['published'])
-        return items
-
-    def _vuln_poll_worker(self):
-        """Background worker: post up to VULN_MAX_PER_POLL newest CVEs per poll."""
-        try:
-            since = datetime.datetime.fromisoformat(self._vuln_since)
-            new_items = [
-                item for item in self._fetch_cve_feed()
-                if item['published'] > since and item['id'] not in self._posted_cve_ids
-            ]
-            if not new_items:
-                return
-            # Feed is oldest-first; take the newest few so a backlog never floods.
-            for item in new_items[-VULN_MAX_PER_POLL:]:
-                for channel in self.channels:
-                    for line in self._format_cve_alert(item):
-                        self.send_message(channel, line)
-                        time.sleep(0.5)
-                self._posted_cve_ids.append(item['id'])
-            # Advance past everything new (incl. any skipped older ones) so the
-            # next poll only ever sees genuinely newer CVEs.
-            self._vuln_since = max(i['published'] for i in new_items).isoformat()
-            self._posted_cve_ids = self._posted_cve_ids[-500:]
-            self._save_vuln_state()
-        except Exception as e:
-            print(f"[CVE monitor] poll failed: {e}")
-        finally:
-            self._vuln_poll_running = False
-
-    def _format_cve_alert(self, item: dict) -> list:
-        """Format a single feed CVE as IRC alert lines."""
-        cid = item['id']
-        score = item['score']
-        score_val = score if score is not None else 0.0
-        sc = self._cvss_color(score_val)
-        sev = item['severity'] or 'N/A'
-        score_str = f"{score_val} {sev}" if score is not None else sev
-        lines = [self._header(f"New CVE {BOX_SEP} {B}{sc}{cid}{R}{COLOR_PRIMARY} {BOX_SEP} {B}{sc}{score_str}{R}")]
-        if item['desc']:
-            lines.append(self._arrow_line(f"{COLOR_ACCENT}{self._two_sentences(item['desc'])}{R}"))
-        lines.append(self._arrow_line(
-            f"{self._label('URL')}: {COLOR_VALUE}{item['link']}{R}"
-        ))
-        return lines
+            return [self._error(f"CVE search failed: {e}")]
 
     # ─── Command Handler ──────────────────────────────────────────
 
@@ -1989,12 +1785,6 @@ class IRCBot:
                 self.send_raw(raw_cmd)
                 return
 
-            elif command == f"{p}vulntest":
-                self.send_message(channel, self._info(
-                    f"CVE monitor active — posting new CVEs since {self._vuln_since} UTC. Forcing a poll..."))
-                self._last_vuln_poll = 0.0
-                self._poll_new_vulns()
-                return
 
         if not self._check_rate_limit(nick):
             return
@@ -2339,24 +2129,17 @@ class IRCBot:
                 self.send_message(channel, line)
                 time.sleep(0.2)
 
-        # ── CVE / Vulns ──
-        elif command in (f"{p}cve",):
+        # ── CVE search ──
+        elif command == f"{p}vuln":
             if len(parts) < 2:
-                self.send_message(channel, self._error(f"Usage: {p}cve <CVE-ID>  (e.g. {p}cve CVE-2024-1234)"))
+                self.send_message(channel, self._error(f"Usage: {p}vuln <search text>  (keyword or CVE-ID)"))
                 return
-            cve_id = Sanitizer.sanitize_term(parts[1])
-            if not cve_id:
-                self.send_message(channel, self._error("Invalid CVE ID"))
+            query = Sanitizer.sanitize_term(" ".join(parts[1:]))
+            if not query:
+                self.send_message(channel, self._error("Invalid search text"))
                 return
-            self.send_message(channel, self._info(f"Looking up {cve_id.upper()}..."))
-            result = self.get_cve(cve_id)
-            for line in result:
-                self.send_message(channel, line)
-                time.sleep(0.3)
-
-        elif command in (f"{p}vuln", f"{p}vulns", f"{p}cves"):
-            self.send_message(channel, self._info("Fetching latest CVEs from NVD..."))
-            result = self.get_latest_cves(5)
+            self.send_message(channel, self._info(f"Searching NVD for \"{query}\"..."))
+            result = self.search_cves(query)
             for line in result:
                 self.send_message(channel, line)
                 time.sleep(0.3)
@@ -2370,7 +2153,7 @@ class IRCBot:
                 f" {B}{C.YELLOW}Info{R}      {COLOR_ACCENT}{p}urban/ud <term>{R}{dot}{COLOR_ACCENT}{p}time [loc]{R}{dot}{COLOR_ACCENT}{p}http <code>{R}{dot}{COLOR_ACCENT}{p}dns <host>{R}{dot}{COLOR_ACCENT}{p}geo <ip>{R}",
                 f" {B}{C.GREEN}Net{R}       {COLOR_ACCENT}{p}title/t <url>{R}{dot}{COLOR_ACCENT}{p}isup/up <host>{R}{dot}{COLOR_ACCENT}{p}shorten <url>{R}{dot}{COLOR_ACCENT}{p}stock <tick>{R}",
                 f" {B}{C.LIGHT_BLUE}Lookup{R}    {COLOR_ACCENT}{p}define/def <word>{R}{dot}{COLOR_ACCENT}{p}tr <lang> <text>{R}{dot}{COLOR_ACCENT}{p}whois <nick>{R}",
-                f" {B}{C.RED}Security{R}  {COLOR_ACCENT}{p}cve <CVE-ID>{R}{dot}{COLOR_ACCENT}{p}vuln/vulns/cves{R}",
+                f" {B}{C.RED}Security{R}  {COLOR_ACCENT}{p}vuln <search text>{R}",
                 f" {B}{C.CYAN}Fun{R}       {COLOR_ACCENT}{p}coin/flip{R}{dot}{COLOR_ACCENT}{p}roll/dice [XdY]{R}{dot}{COLOR_ACCENT}{p}8ball/8 <q>{R}{dot}{COLOR_ACCENT}{p}rps <r/p/s>{R}{dot}{COLOR_ACCENT}{p}fact{R}",
                 f" {B}{C.YELLOW}Social{R}    {COLOR_ACCENT}{p}quote{R}{dot}{COLOR_ACCENT}{p}addquote <text>{R}{dot}{COLOR_ACCENT}{p}tell <nick> <msg>{R}",
                 f" {B}{C.LIGHT_GREEN}Utility{R}   {COLOR_ACCENT}{p}seen <nick>{R}{dot}{COLOR_ACCENT}{p}ping{R}{dot}{COLOR_ACCENT}{p}uptime{R}",
@@ -2378,7 +2161,7 @@ class IRCBot:
                 f" {B}{C.LIGHT_BLUE}Text{R}      {COLOR_ACCENT}{p}reverse <text>{R}{dot}{COLOR_ACCENT}{p}mock <text>{R}",
             ]
             if self._is_admin(hostmask):
-                lines.append(f" {B}{C.RED}Admin{R}     {COLOR_ACCENT}{p}join{R}{dot}{COLOR_ACCENT}{p}part{R}{dot}{COLOR_ACCENT}{p}quit{R}{dot}{COLOR_ACCENT}{p}say{R}{dot}{COLOR_ACCENT}{p}nick{R}{dot}{COLOR_ACCENT}{p}kick{R}{dot}{COLOR_ACCENT}{p}raw{R}{dot}{COLOR_ACCENT}{p}vulntest{R}")
+                lines.append(f" {B}{C.RED}Admin{R}     {COLOR_ACCENT}{p}join{R}{dot}{COLOR_ACCENT}{p}part{R}{dot}{COLOR_ACCENT}{p}quit{R}{dot}{COLOR_ACCENT}{p}say{R}{dot}{COLOR_ACCENT}{p}nick{R}{dot}{COLOR_ACCENT}{p}kick{R}{dot}{COLOR_ACCENT}{p}raw{R}")
             for line in lines:
                 self.send_message(channel, line)
                 time.sleep(0.3)
@@ -2426,12 +2209,11 @@ class IRCBot:
 
         buffer = ""
 
-        # Allow the recv loop to time out so scheduled tasks can run
-        self.irc.settimeout(30)
+        # Keep a recv timeout so a stalled connection doesn't block forever
+        self.irc.settimeout(300)
 
         while True:
             try:
-                self._check_scheduled_tasks()
                 data = self.irc.recv(2048)
                 if not data:
                     raise ConnectionError("Server closed connection")
@@ -2554,7 +2336,7 @@ class IRCBot:
                             self.handle_command(channel, nick, hostmask, message)
 
             except socket.timeout:
-                continue  # normal — just lets _check_scheduled_tasks fire
+                continue  # normal — recv just timed out with no data
             except KeyboardInterrupt:
                 print("\nShutting down...")
                 self.send_raw("QUIT :le0 shutting down")
