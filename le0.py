@@ -100,6 +100,7 @@ COLOR_VALUE = IRCColors.LIGHT_GREY
 VULN_FEED_URL = "https://cvefeed.io/rssfeed/severity/high.xml"
 VULN_POLL_INTERVAL = 300          # seconds between feed polls
 VULN_INITIAL_LOOKBACK = 6420      # 1h47m: on first run, post CVEs newer than this many seconds ago
+VULN_MAX_PER_POLL = 3             # never post more than this many CVEs per poll (anti-flood)
 
 
 class Sanitizer:
@@ -1874,27 +1875,27 @@ class IRCBot:
         return items
 
     def _vuln_poll_worker(self):
-        """Background worker: post feed CVEs published after the high-water mark."""
+        """Background worker: post up to VULN_MAX_PER_POLL newest CVEs per poll."""
         try:
             since = datetime.datetime.fromisoformat(self._vuln_since)
-            newest = since
-            posted_any = False
-            for item in self._fetch_cve_feed():
-                if item['published'] <= since or item['id'] in self._posted_cve_ids:
-                    continue
+            new_items = [
+                item for item in self._fetch_cve_feed()
+                if item['published'] > since and item['id'] not in self._posted_cve_ids
+            ]
+            if not new_items:
+                return
+            # Feed is oldest-first; take the newest few so a backlog never floods.
+            for item in new_items[-VULN_MAX_PER_POLL:]:
                 for channel in self.channels:
                     for line in self._format_cve_alert(item):
                         self.send_message(channel, line)
                         time.sleep(0.5)
                 self._posted_cve_ids.append(item['id'])
-                if item['published'] > newest:
-                    newest = item['published']
-                posted_any = True
-            if newest > since:
-                self._vuln_since = newest.isoformat()
-            if posted_any:
-                self._posted_cve_ids = self._posted_cve_ids[-500:]
-                self._save_vuln_state()
+            # Advance past everything new (incl. any skipped older ones) so the
+            # next poll only ever sees genuinely newer CVEs.
+            self._vuln_since = max(i['published'] for i in new_items).isoformat()
+            self._posted_cve_ids = self._posted_cve_ids[-500:]
+            self._save_vuln_state()
         except Exception as e:
             print(f"[CVE monitor] poll failed: {e}")
         finally:
