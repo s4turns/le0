@@ -198,7 +198,8 @@ class IRCBot:
                  sasl_username: Optional[str] = None,
                  sasl_password: Optional[str] = None,
                  admins: list = None,
-                 nvd_api_key: Optional[str] = None):
+                 nvd_api_key: Optional[str] = None,
+                 youtube_api_key: Optional[str] = None):
         self.server = server
         self.port = port
         self.nickname = nickname
@@ -212,6 +213,7 @@ class IRCBot:
         self.sasl_password = sasl_password
         self.admins = admins or []
         self.nvd_api_key = nvd_api_key
+        self.youtube_api_key = youtube_api_key
         self.irc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.start_time = time.time()
 
@@ -1338,7 +1340,10 @@ class IRCBot:
     # ─── Title / Define / Translate / Shorten / Stock / IsUp / Tell ───────────────
 
     def get_title(self, url: str) -> str:
-        """Fetch the <title> of a webpage."""
+        """Fetch the <title> of a webpage (rich card for YouTube links)."""
+        vid = self._youtube_video_id(url)
+        if vid:
+            return self.get_youtube(vid)
         try:
             resp = requests.get(url, timeout=6, headers=self._nvd_headers(), allow_redirects=True)
             resp.raise_for_status()
@@ -1353,6 +1358,108 @@ class IRCBot:
             return f"{self._header('Title')} {COLOR_ACCENT}{title}{R}"
         except Exception as e:
             return self._error(f"Could not fetch title: {e}")
+
+    def _youtube_video_id(self, text: str):
+        """Extract an 11-char YouTube video ID from a URL or free text, if present."""
+        m = re.search(
+            r'(?<![\w.\-/@])'
+            r'(?:https?://)?(?:www\.|m\.|music\.)?'
+            r'(?:youtube\.com/(?:watch\?(?:\S*?&)?v=|shorts/|embed/|live/|v/)|youtu\.be/)'
+            r'([A-Za-z0-9_-]{11})',
+            text, re.I)
+        return m.group(1) if m else None
+
+    def _fmt_count(self, value):
+        """Format a numeric string/int with thousands separators, or None."""
+        try:
+            return f"{int(str(value).replace(',', '')):,}"
+        except (ValueError, TypeError):
+            return None
+
+    def _fmt_iso_duration(self, iso):
+        """Format an ISO-8601 duration (e.g. PT1H2M3S) as H:MM:SS or M:SS, or None."""
+        if not iso:
+            return None
+        m = re.match(r'PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$', iso)
+        if not m:
+            return None
+        h, mi, s = (int(x) if x else 0 for x in m.groups())
+        return f"{h}:{mi:02d}:{s:02d}" if h else f"{mi}:{s:02d}"
+
+    def _youtube_oembed(self, video_id: str):
+        """No-key fallback: fetch (title, author) from YouTube's oEmbed endpoint."""
+        try:
+            wu = f"https://www.youtube.com/watch?v={video_id}"
+            ou = "https://www.youtube.com/oembed?url=" + urllib.parse.quote(wu, safe='') + "&format=json"
+            resp = requests.get(ou, timeout=8, headers={'User-Agent': 'le0-irc-bot/1.0'})
+            if resp.status_code != 200:
+                return None, None
+            d = resp.json()
+            return d.get('title'), d.get('author_name', '')
+        except Exception:
+            return None, None
+
+    def get_youtube(self, video_id: str) -> str:
+        """Build a rich card for a YouTube video via the Data API (oEmbed fallback if no key)."""
+        if self.youtube_api_key:
+            try:
+                api = ("https://www.googleapis.com/youtube/v3/videos"
+                       "?part=snippet,statistics,contentDetails"
+                       f"&id={urllib.parse.quote(video_id)}&key={self.youtube_api_key}")
+                resp = requests.get(api, timeout=8)
+                resp.raise_for_status()
+                items = resp.json().get('items', [])
+                if not items:
+                    return self._error("YouTube video not found")
+                sn = items[0].get('snippet', {})
+                st = items[0].get('statistics', {})
+                cd = items[0].get('contentDetails', {})
+                return self._youtube_card(
+                    title=sn.get('title', 'YouTube video'),
+                    author=sn.get('channelTitle', ''),
+                    views=self._fmt_count(st.get('viewCount')),
+                    likes=self._fmt_count(st.get('likeCount')),
+                    length=self._fmt_iso_duration(cd.get('duration')),
+                    desc=sn.get('description', ''),
+                )
+            except Exception as e:
+                return self._error(f"YouTube API error: {e}")
+        # No API key: oEmbed gives title + channel without a key (no stats/description).
+        title, author = self._youtube_oembed(video_id)
+        if not title:
+            return self._error("YouTube lookup needs YOUTUBE_API_KEY")
+        return self._youtube_card(title=title, author=author,
+                                  views=None, likes=None, length=None, desc='')
+
+    def _youtube_card(self, title, author, views, likes, length, desc) -> str:
+        """Render the YouTube info card from extracted fields. Starts with a YouTube-logo badge."""
+        desc = re.sub(r'\s+', ' ', desc or '').strip()
+        if len(desc) > 250:
+            desc = desc[:247].rstrip() + '...'
+        # Red badge with white play triangle, mimicking the YouTube logo.
+        badge = f"{B}\x0300,04 ▶ {R}{B}{C.RED} YouTube{R}"
+        lines = [f"{badge}  {B}{COLOR_ACCENT}{title}{R}"]
+        sep = f" {COLOR_PRIMARY}|{R} "
+        stats = []
+        if author:
+            stats.append(f"{self._label('Channel')}: {COLOR_ACCENT}{author}{R}")
+        if views:
+            stats.append(f"{self._label('Views')}: {COLOR_VALUE}{views}{R}")
+        if likes:
+            stats.append(f"{self._label('Likes')}: {COLOR_VALUE}{likes}{R}")
+        if length:
+            stats.append(f"{self._label('Length')}: {COLOR_VALUE}{length}{R}")
+        if stats:
+            lines.append(self._arrow_line(sep.join(stats)))
+        if desc:
+            lines.append(self._arrow_line(f"{COLOR_ACCENT}{desc}{R}"))
+        return "\n".join(lines)
+
+    def _youtube_worker(self, channel: str, video_id: str):
+        """Fetch and post a YouTube card off the recv loop so the bot stays responsive."""
+        for line in self.get_youtube(video_id).split('\n'):
+            self.send_message(channel, line)
+            time.sleep(0.3)
 
     def get_definition(self, word: str) -> str:
         """Look up a word definition via Free Dictionary API."""
@@ -2175,6 +2282,10 @@ class IRCBot:
             print("[NVD] API key configured — using authenticated rate limit (50 req/30s)")
         else:
             print("[NVD] No API key — unauthenticated rate limit (5 req/30s)")
+        if self.youtube_api_key:
+            print("[YouTube] Data API key configured — full video cards (title, views, likes, etc.)")
+        else:
+            print("[YouTube] No API key — links show title + channel only (set YOUTUBE_API_KEY for stats)")
 
         buffer = ""
         connected = False
@@ -2334,6 +2445,12 @@ class IRCBot:
 
                         if message.startswith(self.command_prefix):
                             self.handle_command(channel, nick, hostmask, message)
+                        else:
+                            # Auto-post a card for any YouTube link pasted in-channel
+                            vid = self._youtube_video_id(message)
+                            if vid:
+                                threading.Thread(target=self._youtube_worker,
+                                                 args=(channel, vid), daemon=True).start()
 
             except socket.timeout:
                 continue  # normal — recv just timed out with no data
@@ -2371,6 +2488,7 @@ if __name__ == "__main__":
         sasl_password=config.SASL_PASSWORD,
         admins=getattr(config, 'ADMINS', []),
         nvd_api_key=os.environ.get('NVD_API_KEY'),
+        youtube_api_key=os.environ.get('YOUTUBE_API_KEY'),
     )
 
     # Enhanced startup banner

@@ -22,3 +22,8 @@ SASL_PASSWORD = None            # SASL plain password (if needed)
 # NVD API key — set via environment variable instead:
 #   export NVD_API_KEY="your-key-here"
 # Without a key: 5 req/30s limit. With a key: 50 req/30s.
+
+# YouTube Data API v3 key — set via environment variable:
+#   export YOUTUBE_API_KEY="your-key-here"
+# Enables full cards (title, channel, views, likes, length, description) for
+# YouTube links pasted in-channel. Without a key, links show title + channel only.
