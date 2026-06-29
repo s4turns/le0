@@ -1420,40 +1420,31 @@ class IRCBot:
                     views=self._fmt_count(st.get('viewCount')),
                     likes=self._fmt_count(st.get('likeCount')),
                     length=self._fmt_iso_duration(cd.get('duration')),
-                    desc=sn.get('description', ''),
                 )
             except Exception as e:
                 return self._error(f"YouTube API error: {e}")
-        # No API key: oEmbed gives title + channel without a key (no stats/description).
+        # No API key: oEmbed gives title + channel without a key (no stats).
         title, author = self._youtube_oembed(video_id)
         if not title:
             return self._error("YouTube lookup needs YOUTUBE_API_KEY")
         return self._youtube_card(title=title, author=author,
-                                  views=None, likes=None, length=None, desc='')
+                                  views=None, likes=None, length=None)
 
-    def _youtube_card(self, title, author, views, likes, length, desc) -> str:
-        """Render the YouTube info card from extracted fields. Starts with a YouTube-logo badge."""
-        desc = re.sub(r'\s+', ' ', desc or '').strip()
-        if len(desc) > 250:
-            desc = desc[:247].rstrip() + '...'
+    def _youtube_card(self, title, author, views, likes, length) -> str:
+        """Render a one-line YouTube card: logo badge, title, channel, views, likes, length."""
         # Red badge with white play triangle, mimicking the YouTube logo.
         badge = f"{B}\x0300,04 ▶ {R}{B}{C.RED} YouTube{R}"
-        lines = [f"{badge}  {B}{COLOR_ACCENT}{title}{R}"]
         sep = f" {COLOR_PRIMARY}|{R} "
-        stats = []
+        parts = [f"{B}{COLOR_ACCENT}{title}{R}"]
         if author:
-            stats.append(f"{self._label('Channel')}: {COLOR_ACCENT}{author}{R}")
+            parts.append(f"{self._label('Channel')}: {COLOR_ACCENT}{author}{R}")
         if views:
-            stats.append(f"{self._label('Views')}: {COLOR_VALUE}{views}{R}")
+            parts.append(f"{self._label('Views')}: {COLOR_VALUE}{views}{R}")
         if likes:
-            stats.append(f"{self._label('Likes')}: {COLOR_VALUE}{likes}{R}")
+            parts.append(f"{self._label('Likes')}: {COLOR_VALUE}{likes}{R}")
         if length:
-            stats.append(f"{self._label('Length')}: {COLOR_VALUE}{length}{R}")
-        if stats:
-            lines.append(self._arrow_line(sep.join(stats)))
-        if desc:
-            lines.append(self._arrow_line(f"{COLOR_ACCENT}{desc}{R}"))
-        return "\n".join(lines)
+            parts.append(f"{self._label('Length')}: {COLOR_VALUE}{length}{R}")
+        return f"{badge}  " + sep.join(parts)
 
     def _youtube_worker(self, channel: str, video_id: str):
         """Fetch and post a YouTube card off the recv loop so the bot stays responsive."""
