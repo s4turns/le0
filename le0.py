@@ -199,7 +199,8 @@ class IRCBot:
                  sasl_password: Optional[str] = None,
                  admins: list = None,
                  nvd_api_key: Optional[str] = None,
-                 youtube_api_key: Optional[str] = None):
+                 youtube_api_key: Optional[str] = None,
+                 clone_guard: bool = True):
         self.server = server
         self.port = port
         self.nickname = nickname
@@ -290,6 +291,16 @@ class IRCBot:
 
         # Pending WHOIS requests: nick_lower -> {'channel': ch, 'data': {}}
         self.pending_whois = {}
+
+        # Clone guard: auto kick-ban bots that duplicate this bot's output.
+        # Tracks our own recent channel output (normalized) and the time of
+        # the last YouTube link pasted per channel.
+        self.clone_guard = clone_guard
+        self.clone_echo_window = 300     # seconds our output stays matchable
+        self.clone_card_window = 20      # seconds after a YT link that a rival card triggers
+        self.clone_min_echo_len = 24     # ignore short/generic lines (8ball answers etc.)
+        self.recent_output = {}          # channel_lower -> [(normalized_line, ts), ...]
+        self.recent_yt_link = {}         # channel_lower -> ts of last pasted YouTube link
 
         # Pending tells: nick_lower -> [(from_nick, message, ts), ...]
         self.tells = {}
@@ -658,7 +669,70 @@ class IRCBot:
     def send_message(self, target: str, message: str):
         """Send a message to a channel or user."""
         message = Sanitizer.sanitize_irc_output(message)
+        if self.clone_guard and target.startswith('#'):
+            self._remember_output(target, message)
         self.send_raw(f"PRIVMSG {target} :{message}")
+
+    # ─── Clone guard ──────────────────────────────────────────────
+
+    CLONE_KICK_REASON = "there is only room for one bot"
+
+    def _normalize_clone(self, text: str) -> str:
+        """Normalize a line for clone comparison: strip IRC formatting and
+        invisible Unicode (bidi isolates some bots wrap titles in), collapse
+        whitespace, lowercase."""
+        text = self._strip_irc_colors(text)
+        text = re.sub(r'[⁦-⁩​-‏﻿]', '', text)
+        return re.sub(r'\s+', ' ', text).strip().lower()
+
+    def _remember_output(self, channel: str, message: str):
+        """Record a line we sent so echoes of it can be detected."""
+        now = time.time()
+        lines = self.recent_output.setdefault(channel.lower(), [])
+        lines.append((self._normalize_clone(message), now))
+        # Prune expired entries and cap memory
+        lines[:] = [(l, t) for l, t in lines if now - t <= self.clone_echo_window][-100:]
+
+    def _looks_like_yt_card(self, clean: str) -> bool:
+        """Heuristic for another bot's YouTube link card: mentions YouTube,
+        has a Channel: field, and uses pipe-separated fields."""
+        return ('youtube' in clean and 'channel:' in clean
+                and clean.count('|') >= 2)
+
+    def _clone_guard_check(self, channel: str, nick: str, userhost: str,
+                           hostmask: str, message: str) -> bool:
+        """Detect a bot duplicating our output; ban+kick it. Returns True if
+        the message was handled (offender kicked)."""
+        if not self.clone_guard or not channel.startswith('#'):
+            return False
+        if self._is_admin(hostmask):
+            return False
+
+        clean = self._normalize_clone(message)
+        now = time.time()
+        matched = None
+
+        # 1) Verbatim echo of something we said recently
+        if len(clean) >= self.clone_min_echo_len:
+            for line_norm, ts in self.recent_output.get(channel.lower(), []):
+                if line_norm == clean:
+                    matched = "echoed bot output"
+                    break
+
+        # 2) Rival YouTube card fired off the same pasted link
+        if not matched:
+            link_ts = self.recent_yt_link.get(channel.lower(), 0)
+            if now - link_ts <= self.clone_card_window and self._looks_like_yt_card(clean):
+                matched = "duplicate YouTube card"
+
+        if not matched:
+            return False
+
+        host = userhost.split('@')[-1]
+        print(f"[clone-guard] {nick} ({hostmask}) in {channel}: {matched} — kick-banning")
+        self.send_raw(f"MODE {channel} +b *!*@{host}")
+        self.send_raw(f"KICK {channel} {nick} :{self.CLONE_KICK_REASON}")
+        return True
 
     def join_channel(self, channel: str):
         """Join a channel."""
@@ -2420,6 +2494,10 @@ class IRCBot:
                         if nick == self.nickname:
                             continue
 
+                        # Clone guard: kick-ban bots that copy our output
+                        if self._clone_guard_check(channel, nick, userhost, hostmask, message):
+                            continue
+
                         self.track_seen(nick, channel, message)
 
                         # Deliver pending tells
@@ -2440,6 +2518,7 @@ class IRCBot:
                             # Auto-post a card for any YouTube link pasted in-channel
                             vid = self._youtube_video_id(message)
                             if vid:
+                                self.recent_yt_link[channel.lower()] = time.time()
                                 threading.Thread(target=self._youtube_worker,
                                                  args=(channel, vid), daemon=True).start()
 
@@ -2480,6 +2559,7 @@ if __name__ == "__main__":
         admins=getattr(config, 'ADMINS', []),
         nvd_api_key=os.environ.get('NVD_API_KEY'),
         youtube_api_key=os.environ.get('YOUTUBE_API_KEY'),
+        clone_guard=getattr(config, 'CLONE_GUARD', True),
     )
 
     # Enhanced startup banner

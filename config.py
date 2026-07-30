@@ -11,6 +11,10 @@ COMMAND_PREFIX = "%"
 # Examples: "*!*@myhost.isp.net"  "*!*@*.myisp.net"  "mynick!*@*"
 ADMINS = ["*!*@*.interdo.me", "*!*@*interdome.blcknd.network"]
 
+# Clone guard — auto kick-ban bots that copy le0's output or post rival
+# YouTube cards (requires le0 to have ops in the channel)
+CLONE_GUARD = True
+
 # SSL / Auth
 USE_SSL = True
 VERIFY_SSL = True               # False to allow self-signed/unverified certs

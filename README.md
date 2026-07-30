@@ -1,6 +1,6 @@
 # le0 - IRC Bot
 
-A Python IRC bot with weather, utilities, fun commands, and text tools. ASCII-styled output with IRC color formatting.
+A Python IRC bot with weather, network lookups, CVE search, YouTube link cards, utilities, fun commands, and text tools. ASCII-styled output with IRC color formatting.
 
 ## Features
 
@@ -11,6 +11,17 @@ A Python IRC bot with weather, utilities, fun commands, and text tools. ASCII-st
 ### Info
 - Urban Dictionary lookups
 - Current time (UTC)
+- HTTP status code reference
+
+### Network & Lookups
+- Page title fetcher for any URL
+- **YouTube link cards** -- any YouTube link pasted in-channel auto-expands to a one-line card with title, channel, views, likes, and length (also via `%title`)
+- Dictionary definitions and translation
+- URL shortener and stock quotes
+- Site up/down check, DNS lookup, GeoIP, and `whois`
+
+### Security
+- **CVE search** -- `%vuln <text>` searches the NVD by keyword or exact CVE-ID and returns the most recent matches with CVSS score, severity, affected product, and a one-line summary
 
 ### Fun
 - Coin flip with ASCII art
@@ -21,6 +32,7 @@ A Python IRC bot with weather, utilities, fun commands, and text tools. ASCII-st
 
 ### Social
 - Quote database -- save and retrieve quotes from chat
+- `%tell` -- leave a message for a user, delivered when they're next active
 
 ### Utility
 - Seen tracker -- check when someone was last active
@@ -34,12 +46,13 @@ A Python IRC bot with weather, utilities, fun commands, and text tools. ASCII-st
 - Mocking case (SpOnGeBoB)
 
 ### Admin
+- **Clone guard** -- auto kick-bans bots that copy le0's output: verbatim echoes of recent bot lines, or rival YouTube cards posted off the same pasted link (needs ops; toggle with `CLONE_GUARD` in config). There is only room for one bot.
 - Hostmask-based authentication (`nick!user@host` with wildcard support)
 - Admin commands bypass rate limiting
 - `%join`, `%part`, `%quit`, `%say`, `%nick`, `%kick`, `%raw`
 - Admin section only visible in `%help` to authenticated admins
 
-### Security
+### Security & Safety
 - Input sanitization on all commands (CRLF injection, IRC control chars, length limits)
 - URL parameter encoding on all API calls
 - Per-user rate limiting (2s cooldown)
@@ -89,6 +102,21 @@ SASL_USERNAME = None            # SASL plain username (if needed)
 SASL_PASSWORD = None            # SASL plain password (if needed)
 ```
 
+### API keys (optional, set via environment variables)
+
+API keys are read from the environment, not stored in the config file:
+
+```bash
+# NVD (CVE search) -- without a key: 5 req/30s; with a key: 50 req/30s
+export NVD_API_KEY="your-nvd-key"
+
+# YouTube Data API v3 -- enables full link cards (views, likes, length).
+# Without a key, links fall back to title + channel only via oEmbed.
+export YOUTUBE_API_KEY="your-youtube-key"
+```
+
+Get a YouTube key from the [Google Cloud Console](https://console.cloud.google.com/): create a project, enable **YouTube Data API v3**, then create an API key under **Credentials**.
+
 ## Usage
 
 ```bash
@@ -111,6 +139,22 @@ WEATHER
 INFO
   %urban <term>        or  %ud <term>         Urban Dictionary lookup
   %time [location]                            Current time (UTC)
+  %http <code>         or  %h <code>          HTTP status code reference
+
+NETWORK & LOOKUPS
+  %title <url>         or  %t <url>           Page title (YouTube card for YT links)
+  %define <word>       or  %def <word>        Dictionary definition
+  %tr <lang> <text>    or  %translate ...     Translate text
+  %shorten <url>       or  %short <url>        Shorten a URL
+  %stock <ticker>      or  %stocks <ticker>   Stock quote
+  %isup <host>         or  %up <host>         Check if a site is up
+  %dns <hostname>      or  %nslookup <host>   DNS lookup
+  %geo <ip|host>       or  %geoip / %ip       GeoIP lookup
+  %whois <nick>                               WHOIS a user
+  (pasting any YouTube link auto-posts a card: title, channel, views, likes, length)
+
+SECURITY
+  %vuln <search text>                         Search NVD for CVEs (keyword or CVE-ID)
 
 FUN
   %coin  or  %flip                            Flip a coin
@@ -122,6 +166,7 @@ FUN
 SOCIAL
   %quote                                      Random quote from database
   %addquote <text>                            Add a quote
+  %tell <nick> <message>  or  %remind ...     Leave a message for a user
 
 UTILITY
   %seen <nick>                                When was a user last active
@@ -131,7 +176,7 @@ UTILITY
 TOOLS
   %calc <expression>                          Math calculator
   %hash <text>                                MD5/SHA1/SHA256 hashes
-  %base64 <encode|decode> <text>              Base64 encode/decode
+  %base64 <encode|decode> <text>  or  %b64    Base64 encode/decode
   %reverse <text>                             Reverse text
   %mock <text>                                SpOnGeBoB mOcKiNg CaSe
 
@@ -157,18 +202,18 @@ HELP
 <le0>  > Humidity: 76%  Wind: 15km/h W  Clouds: 65%
 <le0>  > Pressure: 1013hPa  Visibility: 10km  Sunrise: 07:45  Sunset: 16:30
 
+<user> https://youtu.be/dQw4w9WgXcQ
+<le0> ▶ YouTube  Rick Astley - Never Gonna Give You Up | Channel: Rick Astley | Views: 1,787,480,087 | Likes: 19,203,655 | Length: 3:34
+
+<user> %vuln jellyfin
+<le0> ----------- CVE Search | jellyfin | 32 matches -----------
+<le0>  > CVE-2026-49247 [8.8] 2026-06-24 Jellyfin —
+<le0>  >   An authenticated user can ...
+<le0>  >   URL: https://nvd.nist.gov/vuln/detail/CVE-2026-49247
+
 <user> %roll 2d6
 <le0> ----------- Dice Roll -----------
 <le0>  > 2d6 > [4, 5] = 9
-
-<user> %calc 2^10
-<le0> ----------- Calculator -----------
-<le0>  > 2**10 = 1024
-
-<user> %rps rock
-<le0> ----------- Rock Paper Scissors -----------
-<le0>  > You: ROCK vs Bot: SCISSORS
-<le0>  > Result: YOU WIN
 ```
 
 Actual output includes IRC color codes for a much prettier display.
