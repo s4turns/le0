@@ -23,6 +23,9 @@ A Python IRC bot with weather, network lookups, CVE search, YouTube link cards, 
 ### Security
 - **CVE search** -- `%vuln <text>` searches the NVD by keyword or exact CVE-ID and returns the most recent matches with CVSS score, severity, affected product, and a one-line summary
 
+### Gitea activity
+- **Gitea webhook** -- the bot opens an HTTP listener that a Gitea instance posts to; new pushes, issues, pull requests, releases, and tag/branch creations are announced as one-line cards in the configured channels (HMAC-SHA256 signature verified; toggle with `GITEA_WEBHOOK_ENABLED` in config)
+
 ### Fun
 - Coin flip with ASCII art
 - Dice rolling (any XdY format)
@@ -116,6 +119,39 @@ export YOUTUBE_API_KEY="your-youtube-key"
 ```
 
 Get a YouTube key from the [Google Cloud Console](https://console.cloud.google.com/): create a project, enable **YouTube Data API v3**, then create an API key under **Credentials**.
+
+### Gitea webhook
+
+The bot can announce activity from a Gitea instance by receiving webhook events. Set these in `config.py`:
+
+```python
+GITEA_WEBHOOK_ENABLED = True
+GITEA_WEBHOOK_HOST = "0.0.0.0"       # Listen address
+GITEA_WEBHOOK_PORT = 8089            # Must match the port in the Gitea webhook URL
+GITEA_WEBHOOK_SECRET = "shared-secret"  # Same value you set in Gitea; verifies X-Gitea-Signature
+GITEA_WEBHOOK_CHANNELS = ["#dev"]    # Channels to announce in (empty = all CHANNELS)
+GITEA_URL = "https://git.interdo.me" # Instance base URL (display only)
+```
+
+Then in Gitea, under **Repository (or Organization) Settings → Webhooks → Add Webhook → Gitea**:
+
+- **Target URL:** `http://<bot-host>:8089/`
+- **HTTP Method:** `POST`
+- **Content Type:** `application/json`
+- **Secret:** the same value as `GITEA_WEBHOOK_SECRET`
+- **Trigger On:** choose the events you want (pushes, issues, pull requests, releases, branch/tag creation), or "All Events"
+
+Handled events: `push`, `issues` (opened/closed/reopened), `pull_request` (opened/closed/merged/reopened), `release` (published/updated), and `create` (tag/branch). Other events are ignored.
+
+> **Note:** the listener binds an inbound TCP port. Make sure your firewall allows Gitea to reach it, and always set a non-empty `GITEA_WEBHOOK_SECRET` outside of local testing — an empty secret accepts unsigned requests. `GET /` returns a plain health check for connectivity testing.
+
+Example output:
+
+```
+ git  Gitea | dom/le0 | dom pushed 3 commits to main | abcdef1 Fix the webhook listener (+2 more) | https://git.interdo.me/dom/le0/compare/a...b
+ git  Gitea | dom/le0 | alice opened issue #12 | Crash on startup | https://git.interdo.me/dom/le0/issues/12
+ git  Gitea | dom/le0 | bob merged PR #5 | Add gitea webhook | https://git.interdo.me/dom/le0/pulls/5
+```
 
 ## Usage
 

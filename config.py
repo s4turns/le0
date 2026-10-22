@@ -4,7 +4,7 @@
 SERVER = "irc.blcknd.network"
 PORT = 6697                     # 6697 for SSL, 6667 for non-SSL
 NICKNAME = "le0"
-CHANNELS = ["#d0m3r", "#blcknd", "#security"]
+CHANNELS = ["#d0m3r", "#blcknd", "#security", "#dev"]
 COMMAND_PREFIX = "%"
 
 # Admin hostmasks (nick!user@host format, wildcards supported)
@@ -31,3 +31,20 @@ SASL_PASSWORD = None            # SASL plain password (if needed)
 #   export YOUTUBE_API_KEY="your-key-here"
 # Enables full cards (title, channel, views, likes, length, description) for
 # YouTube links pasted in-channel. Without a key, links show title + channel only.
+
+# ─── Gitea activity webhook ───────────────────────────────────────
+# Receive push/issue/PR/release events from a Gitea instance and
+# announce them to the configured channels. The bot opens an HTTP
+# listener; in Gitea add a webhook with:
+#   Target URL:   http://the.d0m3r.interdo.me:8089/
+#   HTTP Method:  POST
+#   Content Type: application/json
+#   Secret:       the same value as GITEA_WEBHOOK_SECRET below
+# On the Linode, open the port:  ufw allow 8089/tcp
+GITEA_WEBHOOK_ENABLED = True
+GITEA_WEBHOOK_HOST = "0.0.0.0"      # Listen address (0.0.0.0 = all interfaces)
+GITEA_WEBHOOK_PORT = 8089           # Must match the port in the Gitea webhook URL
+GITEA_WEBHOOK_SECRET = ""           # Set to the same value configured in Gitea.
+                                    # Keep real secrets out of git; set per-deployment.
+GITEA_WEBHOOK_CHANNELS = ["#dev"]   # Channels to announce in; empty = all CHANNELS above
+GITEA_URL = "https://git.interdo.me"  # Instance base URL (used for display only)

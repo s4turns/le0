@@ -9,7 +9,9 @@ import time
 import re
 import random
 import hashlib
+import hmac
 import base64
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import urllib.parse
 import os
 import sys
@@ -200,7 +202,13 @@ class IRCBot:
                  admins: list = None,
                  nvd_api_key: Optional[str] = None,
                  youtube_api_key: Optional[str] = None,
-                 clone_guard: bool = True):
+                 clone_guard: bool = True,
+                 gitea_webhook_enabled: bool = False,
+                 gitea_webhook_host: str = "0.0.0.0",
+                 gitea_webhook_port: int = 8089,
+                 gitea_webhook_secret: str = "",
+                 gitea_webhook_channels: list = None,
+                 gitea_url: str = ""):
         self.server = server
         self.port = port
         self.nickname = nickname
@@ -215,6 +223,13 @@ class IRCBot:
         self.admins = admins or []
         self.nvd_api_key = nvd_api_key
         self.youtube_api_key = youtube_api_key
+        self.gitea_webhook_enabled = gitea_webhook_enabled
+        self.gitea_webhook_host = gitea_webhook_host
+        self.gitea_webhook_port = gitea_webhook_port
+        self.gitea_webhook_secret = gitea_webhook_secret
+        self.gitea_webhook_channels = gitea_webhook_channels or []
+        self.gitea_url = (gitea_url or "").rstrip('/')
+        self._gitea_server = None
         self.irc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.start_time = time.time()
 
@@ -738,6 +753,132 @@ class IRCBot:
         """Join a channel."""
         self.send_raw(f"JOIN {channel}")
         print(f"Joined {channel}")
+
+    # ─── Gitea activity webhook ───────────────────────────────────
+
+    def start_gitea_webhook(self):
+        """Start the HTTP listener that receives Gitea webhook events."""
+        if not self.gitea_webhook_enabled:
+            return
+        try:
+            server = ThreadingHTTPServer(
+                (self.gitea_webhook_host, self.gitea_webhook_port),
+                _GiteaWebhookHandler)
+        except OSError as e:
+            print(f"[gitea] could not bind {self.gitea_webhook_host}:"
+                  f"{self.gitea_webhook_port} — {e}")
+            return
+        server.bot = self
+        server.daemon_threads = True
+        self._gitea_server = server
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        state = "secret set" if self.gitea_webhook_secret else "UNSIGNED — no secret!"
+        print(f"[gitea] webhook listening on {self.gitea_webhook_host}:"
+              f"{self.gitea_webhook_port} ({state})")
+
+    def _gitea_targets(self) -> list:
+        """Channels to announce Gitea events in."""
+        return self.gitea_webhook_channels or self.channels
+
+    def _gitea_announce(self, line: str):
+        """Send one Gitea activity line to every target channel."""
+        for ch in self._gitea_targets():
+            self.send_message(ch, line)
+            time.sleep(0.3)
+
+    @staticmethod
+    def _gitea_badge() -> str:
+        """Green Gitea badge, mirroring the YouTube card style."""
+        return f"{B}\x0300,03 git {R}{B}{C.GREEN} Gitea{R}"
+
+    @staticmethod
+    def _gitea_trim(text: str, limit: int) -> str:
+        """First line of a message, trimmed to a visible length."""
+        text = (text or "").splitlines()[0].strip() if text else ""
+        if len(text) > limit:
+            text = text[:limit - 1].rstrip() + "…"
+        return text
+
+    def _gitea_card(self, repo: str, action: str, detail: str = "", url: str = "") -> str:
+        """Compose a one-line Gitea activity card."""
+        sep = f" {COLOR_PRIMARY}|{R} "
+        parts = [self._gitea_badge(),
+                 f"{B}{COLOR_ACCENT}{repo}{R}",
+                 f"{COLOR_INFO}{action}{R}"]
+        if detail:
+            parts.append(f"{COLOR_VALUE}{detail}{R}")
+        if url:
+            parts.append(f"{COLOR_ACCENT}{url}{R}")
+        return sep.join(parts)
+
+    def handle_gitea_event(self, event: str, payload: dict):
+        """Turn a Gitea webhook event into channel announcements."""
+        repo = (payload.get('repository') or {}).get('full_name', '?')
+        sender = (payload.get('sender') or {}).get('login', 'someone')
+        line = None
+
+        if event == 'push':
+            commits = payload.get('commits') or []
+            ref = payload.get('ref', '')
+            branch = ref.rsplit('/', 1)[-1] if ref else '?'
+            pusher = (payload.get('pusher') or {}).get('login') or sender
+            n = payload.get('total_commits') or len(commits)
+            noun = 'commit' if n == 1 else 'commits'
+            action = f"{pusher} pushed {n} {noun} to {branch}"
+            detail = ""
+            if commits:
+                top = commits[0]
+                sha = (top.get('id') or '')[:7]
+                msg = self._gitea_trim(top.get('message', ''), 60)
+                detail = f"{sha} {msg}"
+                if n > 1:
+                    detail += f" (+{n - 1} more)"
+            line = self._gitea_card(repo, action, detail,
+                                    payload.get('compare_url', ''))
+
+        elif event == 'issues':
+            issue = payload.get('issue') or {}
+            act = payload.get('action', '')
+            if act in ('opened', 'closed', 'reopened'):
+                action = f"{sender} {act} issue #{issue.get('number', '?')}"
+                line = self._gitea_card(repo, action,
+                                        self._gitea_trim(issue.get('title', ''), 80),
+                                        issue.get('html_url', ''))
+
+        elif event == 'pull_request':
+            pr = payload.get('pull_request') or {}
+            act = payload.get('action', '')
+            verb = act
+            if act == 'closed':
+                verb = 'merged' if pr.get('merged') else 'closed'
+            if verb in ('opened', 'closed', 'merged', 'reopened'):
+                action = f"{sender} {verb} PR #{pr.get('number', '?')}"
+                line = self._gitea_card(repo, action,
+                                        self._gitea_trim(pr.get('title', ''), 80),
+                                        pr.get('html_url', ''))
+
+        elif event == 'release':
+            rel = payload.get('release') or {}
+            act = payload.get('action', '')
+            if act in ('published', 'updated'):
+                tag = rel.get('tag_name', '?')
+                action = f"{sender} {act} release {tag}"
+                line = self._gitea_card(repo, action,
+                                        self._gitea_trim(rel.get('name', ''), 60),
+                                        rel.get('html_url', ''))
+
+        elif event == 'create':
+            ref_type = payload.get('ref_type', 'ref')
+            ref = payload.get('ref', '?')
+            action = f"{sender} created {ref_type} {ref}"
+            url = f"{self.gitea_url}/{repo}/src/{ref_type}/{ref}" if self.gitea_url else ""
+            line = self._gitea_card(repo, action, "", url)
+
+        if line:
+            self._gitea_announce(line)
+        else:
+            print(f"[gitea] ignored event '{event}'"
+                  f" action='{payload.get('action', '')}'")
 
     # ─── Weather ──────────────────────────────────────────────────
 
@@ -2385,6 +2526,9 @@ class IRCBot:
 
         buffer = ""
 
+        # Start the Gitea webhook listener once we're on channel
+        self.start_gitea_webhook()
+
         # Keep a recv timeout so a stalled connection doesn't block forever
         self.irc.settimeout(300)
 
@@ -2533,6 +2677,67 @@ class IRCBot:
                 time.sleep(5)
 
 
+class _GiteaWebhookHandler(BaseHTTPRequestHandler):
+    """Receives Gitea webhook POSTs and hands them to the bot. The owning
+    ThreadingHTTPServer carries the bot instance on `server.bot`."""
+
+    MAX_BODY = 1_000_000  # 1 MB cap on webhook payloads
+
+    def log_message(self, *args):
+        pass  # silence default stderr access logging
+
+    def _reply(self, code: int, body: bytes = b""):
+        self.send_response(code)
+        self.send_header("Content-Type", "text/plain")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if body:
+            self.wfile.write(body)
+
+    def do_GET(self):
+        # Simple health check so you can curl the listener.
+        self._reply(200, b"le0 gitea webhook OK\n")
+
+    def do_POST(self):
+        bot = getattr(self.server, 'bot', None)
+        if bot is None:
+            self._reply(503, b"not ready")
+            return
+
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except ValueError:
+            length = 0
+        if length <= 0 or length > self.MAX_BODY:
+            self._reply(400, b"bad content-length")
+            return
+
+        raw = self.rfile.read(length)
+
+        secret = bot.gitea_webhook_secret
+        if secret:
+            sig = self.headers.get("X-Gitea-Signature", "")
+            expected = hmac.new(secret.encode(), raw, hashlib.sha256).hexdigest()
+            if not hmac.compare_digest(sig, expected):
+                print("[gitea] signature mismatch — request rejected")
+                self._reply(401, b"bad signature")
+                return
+
+        event = self.headers.get("X-Gitea-Event", "")
+        try:
+            payload = json.loads(raw.decode("utf-8", errors="replace"))
+        except ValueError:
+            self._reply(400, b"bad json")
+            return
+
+        try:
+            bot.handle_gitea_event(event, payload)
+        except Exception as e:
+            print(f"[gitea] error handling event '{event}': {e}")
+
+        self._reply(204)
+
+
 if __name__ == "__main__":
     config_arg = sys.argv[1] if len(sys.argv) > 1 else "config"
     config_file = config_arg if config_arg.endswith('.py') else config_arg + ".py"
@@ -2560,6 +2765,12 @@ if __name__ == "__main__":
         nvd_api_key=os.environ.get('NVD_API_KEY'),
         youtube_api_key=os.environ.get('YOUTUBE_API_KEY'),
         clone_guard=getattr(config, 'CLONE_GUARD', True),
+        gitea_webhook_enabled=getattr(config, 'GITEA_WEBHOOK_ENABLED', False),
+        gitea_webhook_host=getattr(config, 'GITEA_WEBHOOK_HOST', '0.0.0.0'),
+        gitea_webhook_port=getattr(config, 'GITEA_WEBHOOK_PORT', 8089),
+        gitea_webhook_secret=getattr(config, 'GITEA_WEBHOOK_SECRET', ''),
+        gitea_webhook_channels=getattr(config, 'GITEA_WEBHOOK_CHANNELS', []),
+        gitea_url=getattr(config, 'GITEA_URL', ''),
     )
 
     # Enhanced startup banner
